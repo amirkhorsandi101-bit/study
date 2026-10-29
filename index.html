@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>راهبرد | ریشه‌یابی و حل مشکلات اساسی درس خواندن</title>
+    <meta name="description" content="سامانه تحلیلی و تعاملی عارضه‌یابی چالش‌های مطالعه دانش‌آموزان، شبیه‌ساز منحنی فراموشی ابینگهاوس، ابزار شکستن اهمال‌کاری و برنامه‌ریزی شناختی." />
+    <meta property="og:title" content="راهبرد | ریشه‌یابی و حل مشکلات اساسی درس خواندن" />
+    <meta property="og:description" content="سامانه تحلیلی و تعاملی عارضه‌یابی چالش‌های مطالعه دانش‌آموزان، شبیه‌ساز منحنی فراموشی ابینگهاوس، ابزار شکستن اهمال‌کاری و برنامه‌ریزی شناختی." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script>
+      (function() {
+        var suppress = function(str) {
+          return str && (
+            str.indexOf('WebSocket') !== -1 ||
+            str.indexOf('@vite/client') !== -1 ||
+            str.indexOf('createWebSocketModuleRunnerTransport') !== -1
+          );
+        };
+        window.addEventListener('unhandledrejection', function(event) {
+          var reason = event.reason;
+          var text = (reason && (reason.message || reason.stack || String(reason))) || '';
+          if (suppress(text)) {
+            event.stopImmediatePropagation();
+            event.preventDefault();
+          }
+        }, true);
+        window.addEventListener('error', function(event) {
+          var text = (event.message || '') + (event.filename || '') + (event.error && event.error.stack ? event.error.stack : '');
+          if (suppress(text)) {
+            event.stopImmediatePropagation();
+            event.preventDefault();
+          }
+        }, true);
+        var origOnError = window.onerror;
+        window.onerror = function(msg, url, line, col, error) {
+          var text = String(msg || '') + String(url || '') + (error && error.stack ? String(error.stack) : '');
+          if (suppress(text)) {
+            return true;
+          }
+          if (origOnError) return origOnError.apply(this, arguments);
+        };
+      })();
+    </script>
+  </head>
+  <body class="bg-slate-950 text-slate-100 font-['Vazirmatn',sans-serif] antialiased selection:bg-amber-500/20 selection:text-amber-200 min-h-screen">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

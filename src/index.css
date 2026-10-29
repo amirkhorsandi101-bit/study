@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+@layer base {
+  html {
+    font-family: 'Vazirmatn', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: #020617;
+    color: #f8fafc;
+    overflow-x: hidden;
+  }
+}
+
+/* Custom subtle scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #090d1a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* Tabular numbers for clean numeric vertical alignment */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Print optimization for PDF Certificate generation */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 6mm;
+  }
+
+  body {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  #printable-certificate,
+  #printable-certificate * {
+    visibility: visible;
+  }
+
+  #printable-certificate {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
+    aspect-ratio: auto !important;
+    margin: 0 !important;
+    padding: 28px !important;
+    border: 8px solid #1e293b !important;
+    box-shadow: none !important;
+    background: #fffdfa !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    z-index: 9999999;
+  }
+}
