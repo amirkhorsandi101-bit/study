@@ -149,8 +149,16 @@ export const SOUND_ENVIRONMENTS: SoundEnvironment[] = [
   }
 ];
 
+export interface SoundscapePreset {
+  id: string;
+  title: string;
+  description: string;
+  activeIds: string[];
+  volumes: Record<string, number>;
+}
+
 // Presets for quick mood selection
-const PRESETS = [
+const PRESETS: SoundscapePreset[] = [
   {
     id: 'autumn-study',
     title: 'مطالعه در باران پاییزی',
@@ -717,7 +725,7 @@ export const AmbientSoundscape: React.FC<AmbientSoundscapeProps> = ({ onOpenFocu
   }, [binauralSupplementActive, binauralFrequency, binauralVolume]);
 
   // Preset Selection
-  const applyPreset = (preset: typeof PRESETS[0]) => {
+  const applyPreset = (preset: SoundscapePreset) => {
     const newActives: Record<string, boolean> = {
       rain: false, forest: false, whitenoise: false, ocean: false, fire: false, river: false
     };
@@ -725,7 +733,7 @@ export const AmbientSoundscape: React.FC<AmbientSoundscapeProps> = ({ onOpenFocu
       newActives[id] = true;
     });
 
-    const newVols = { ...envVolumes, ...preset.volumes };
+    const newVols: Record<string, number> = { ...envVolumes, ...preset.volumes };
 
     setActiveEnvs(newActives);
     setEnvVolumes(newVols);
