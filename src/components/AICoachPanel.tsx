@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Send, Bot, Sparkles, Loader2, CheckCircle2, HelpCircle } from 'lucide-react';
+import { SimpleMarkdown } from './SimpleMarkdown';
 
 export const AICoachPanel: React.FC = () => {
   const [grade, setGrade] = useState<string>('دوره دوم متوسطه / کنکور');
@@ -41,6 +42,10 @@ export const AICoachPanel: React.FC = () => {
         })
       });
 
+      if (res.status === 429) {
+        setErrorMessage('درخواست‌ها زیاد بود. یک دقیقه صبر کن و دوباره امتحان کن.');
+        return;
+      }
       if (!res.ok) {
         throw new Error('خطا در برقراری ارتباط با سامانه تحلیل.');
       }
@@ -49,7 +54,7 @@ export const AICoachPanel: React.FC = () => {
       setAnalysisResult(data.analysis);
     } catch (err: any) {
       console.error(err);
-      setErrorMessage('مشکلی رخ داد، اما نگران نباشید؛ سیستم محلی فعال است.');
+      setErrorMessage('ارتباط با سرور برقرار نشد. اینترنت را بررسی کن و دوباره امتحان کن.');
     } finally {
       setIsLoading(false);
     }
@@ -187,6 +192,12 @@ export const AICoachPanel: React.FC = () => {
           </button>
         </form>
 
+        {errorMessage && (
+          <div role="alert" className="mt-6 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+            {errorMessage}
+          </div>
+        )}
+
         {/* Output Presentation */}
         {analysisResult && (
           <div className="mt-8 pt-6 border-t border-slate-800 space-y-4 animate-fadeIn">
@@ -195,8 +206,8 @@ export const AICoachPanel: React.FC = () => {
               <span>پاسخ مشاور شناختی و برنامه اقدام اختصاصی:</span>
             </div>
 
-            <div className="bg-slate-950 rounded-xl p-6 border border-slate-800 text-xs sm:text-sm text-slate-200 leading-relaxed space-y-4 whitespace-pre-line font-light">
-              {analysisResult}
+            <div className="bg-slate-950 rounded-xl p-6 border border-slate-800 text-xs sm:text-sm text-slate-200 leading-relaxed font-light">
+              <SimpleMarkdown text={analysisResult} />
             </div>
           </div>
         )}

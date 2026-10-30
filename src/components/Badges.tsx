@@ -29,6 +29,7 @@ import {
 import { EbbinghausTopicItem, WeeklyProgressItem } from './DashboardStats';
 import { DEFAULT_REVIEW_STATS, EbbinghausReviewStats } from './EbbinghausScheduler';
 import { DigitalCertificateModal, CertificateTier, CERTIFICATE_TIERS } from './DigitalCertificateModal';
+import { goToSection } from '../shell/navigation';
 
 const TOPICS_STORAGE_KEY = 'rahbord_ebbinghaus_topics_queue';
 const WEEKLY_STORAGE_KEY = 'rahbord_weekly_study_data';
@@ -712,8 +713,7 @@ export const Badges: React.FC<BadgesProps> = ({ id = 'badges', onNavigate }) => 
     if (targetId && onNavigate) {
       onNavigate(targetId);
     } else if (targetId) {
-      const el = document.getElementById(targetId);
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
+      goToSection(targetId);
     }
   };
 

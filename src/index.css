@@ -6,6 +6,15 @@
     scroll-behavior: smooth;
   }
 
+  section[id] {
+    scroll-margin-top: 5rem;
+  }
+
+  :focus-visible {
+    outline: 2px solid #fbbf24;
+    outline-offset: 2px;
+  }
+
   body {
     background-color: #020617;
     color: #f8fafc;
@@ -76,5 +85,19 @@
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
     z-index: 9999999;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { WeeklyProgressItem } from './DashboardStats';
 import { EbbinghausTopicItem } from './DashboardStats';
+import { goToSection } from '../shell/navigation';
 
 interface ProcrastinationLog {
   id: string;
@@ -425,8 +426,7 @@ export const ProcrastinationAnalyzer: React.FC<{ onNavigateToToolkit?: () => voi
                 if (onNavigateToToolkit) {
                   onNavigateToToolkit();
                 } else {
-                  const el = document.getElementById('toolkit');
-                  if (el) el.scrollIntoView({ behavior: 'smooth' });
+                  goToSection('toolkit');
                 }
               }}
               className="w-full flex items-center justify-center gap-2 py-3 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md shadow-amber-500/20 active:scale-95 cursor-pointer"

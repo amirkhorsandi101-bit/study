@@ -849,7 +849,7 @@ export const DashboardStats: React.FC<{ onNavigateToBadges?: () => void }> = ({ 
           </button>
           <button
             onClick={() => {
-              const el = document.getElementById('ebbinghaus-scheduler');
+              const el = document.getElementById('dashboard-review-planner');
               if (el) el.scrollIntoView({ behavior: 'smooth' });
             }}
             className="text-xs font-semibold px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white rounded-lg transition-colors cursor-pointer"
@@ -1207,7 +1207,7 @@ export const DashboardStats: React.FC<{ onNavigateToBadges?: () => void }> = ({ 
         )}
 
         {/* Section 3: Intelligent Ebbinghaus Next Review Calculation Panel */}
-        <div id="ebbinghaus-scheduler" className="pt-6 border-t border-slate-800/80 space-y-4">
+        <div id="dashboard-review-planner" className="pt-6 border-t border-slate-800/80 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Calendar className="w-4 h-4 text-amber-400" />

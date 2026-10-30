@@ -19,6 +19,7 @@ import {
 import { FocusAudioPlayer } from './FocusAudioPlayer';
 import { DeepWorkPomodoro } from './DeepWorkPomodoro';
 import { AmbientSoundscape } from './AmbientSoundscape';
+import { goToSection } from '../shell/navigation';
 
 export const CognitiveToolkit: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'launcher' | 'pomodoro' | 'switcher' | 'braindump' | 'focus' | 'ambient'>('launcher');
@@ -130,10 +131,7 @@ export const CognitiveToolkit: React.FC = () => {
   };
 
   const handleNavigateToHabits = () => {
-    const el = document.getElementById('habit-tracker');
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth' });
-    }
+    goToSection('habit-tracker');
   };
 
   return (

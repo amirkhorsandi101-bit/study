@@ -54,6 +54,8 @@ import {
   Cell
 } from 'recharts';
 import { EbbinghausTopicItem } from './DashboardStats';
+import { goToSection } from '../shell/navigation';
+import { FEATURES } from '../shell/views';
 
 const TOPICS_STORAGE_KEY = 'rahbord_ebbinghaus_topics_queue';
 const NOTIF_SETTINGS_KEY = 'rahbord_ebbinghaus_notification_settings';
@@ -1289,10 +1291,11 @@ export const EbbinghausScheduler: React.FC = () => {
               <span>خروجی CSV (آفلاین)</span>
             </button>
 
+            {FEATURES.duels && (
+
             <button
               onClick={() => {
-                const el = document.getElementById('study-duels');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
+                goToSection('study-duels');
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 text-amber-300 transition-all cursor-pointer"
               title="ورود به میدان دوئل‌های مطالعاتی و چالش هم‌کلاسی"
@@ -1300,11 +1303,11 @@ export const EbbinghausScheduler: React.FC = () => {
               <Swords className="w-3.5 h-3.5 text-amber-400" />
               <span>دوئل مرور ⚔️</span>
             </button>
+              )}
 
             <button
               onClick={() => {
-                const el = document.getElementById('study-advisor');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
+                goToSection('study-advisor');
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 text-cyan-300 transition-all cursor-pointer"
               title="تحلیل منحنی زوال و چیدمان هوشمند اولویت‌های مرور"
@@ -1315,8 +1318,7 @@ export const EbbinghausScheduler: React.FC = () => {
 
             <button
               onClick={() => {
-                const el = document.getElementById('adaptive-scheduler');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
+                goToSection('adaptive-scheduler');
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 text-cyan-300 transition-all cursor-pointer"
               title="تنظیم فواصل تطبیقی و توازن بار شناختی برای جلوگیری از خستگی ذهنی"

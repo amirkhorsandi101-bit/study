@@ -3,78 +3,70 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
-import { Navbar } from './components/Navbar';
-import { HeroSection } from './components/HeroSection';
-import { ProblemsSection } from './components/ProblemsSection';
-import { EbbinghausSimulator } from './components/EbbinghausSimulator';
-import { EbbinghausScheduler } from './components/EbbinghausScheduler';
-import { AdaptiveSpacedRepetition } from './components/AdaptiveSpacedRepetition';
-import { IntelligentStudyAdvisor } from './components/IntelligentStudyAdvisor';
-import { WeeklyInsight } from './components/WeeklyInsight';
-import { DashboardStats } from './components/DashboardStats';
-import { ProcrastinationAnalyzer } from './components/ProcrastinationAnalyzer';
-import { DiagnosticQuiz } from './components/DiagnosticQuiz';
-import { CognitiveToolkit } from './components/CognitiveToolkit';
-import { AICoachPanel } from './components/AICoachPanel';
-import { Badges } from './components/Badges';
-import { DailyStudyHabitTracker } from './components/DailyStudyHabitTracker';
-import { StudyDuels } from './components/StudyDuels';
+import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { Navbar, BottomNav } from './shell/Navbar';
+import { Footer } from './shell/Footer';
+import { ViewHeader, ViewLoading } from './shell/ViewHeader';
+import { SITE_TITLE, SITE_NAME, getView } from './shell/views';
+import { parseHash, scrollWhenReady, goToSection, type Route } from './shell/navigation';
 import { EbbinghausNotificationCenter } from './components/EbbinghausNotificationCenter';
-import { Footer } from './components/Footer';
+import HomeView from './views/HomeView';
+
+// هر صفحه جدا بارگذاری می‌شود تا باز شدن اول سایت سریع‌تر باشد (نمودارها و ابزارها فقط در صفحهٔ خودشان لازم‌اند)
+const StudyView = lazy(() => import('./views/StudyView'));
+const DiagnoseView = lazy(() => import('./views/DiagnoseView'));
+const ProgressView = lazy(() => import('./views/ProgressView'));
 
 export default function App() {
-  const handleNavigate = (sectionId: string) => {
-    if (sectionId === 'hero') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      return;
+  const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
+  const mainRef = useRef<HTMLElement>(null);
+  const lastView = useRef(route.view);
+
+  useEffect(() => {
+    const onHashChange = () => setRoute(parseHash(window.location.hash));
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  useEffect(() => {
+    const meta = getView(route.view);
+    document.title = route.view === 'home' ? SITE_TITLE : `${meta.title} | ${SITE_NAME}`;
+
+    if (route.section) {
+      scrollWhenReady(route.section);
+    } else {
+      window.scrollTo({ top: 0, behavior: 'auto' });
+      if (lastView.current !== route.view) mainRef.current?.focus({ preventScroll: true });
     }
-    const element = document.getElementById(sectionId);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
+    lastView.current = route.view;
+  }, [route]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-amber-400/20 selection:text-amber-200">
-      <Navbar onNavigate={handleNavigate} />
-      
-      <main className="flex-1">
-        <HeroSection onNavigate={handleNavigate} />
-        <ProblemsSection />
-        <EbbinghausSimulator />
-        <EbbinghausScheduler />
-        <AdaptiveSpacedRepetition
-          id="adaptive-scheduler"
-          onNavigateToScheduler={() => handleNavigate('ebbinghaus-scheduler')}
-          onNavigateToAdvisor={() => handleNavigate('study-advisor')}
-        />
-        <IntelligentStudyAdvisor
-          id="study-advisor"
-          onNavigateToScheduler={() => handleNavigate('ebbinghaus-scheduler')}
-          onNavigateToDuels={() => handleNavigate('study-duels')}
-        />
-        <WeeklyInsight
-          id="weekly-insight"
-          onNavigateToAdvisor={() => handleNavigate('study-advisor')}
-          onNavigateToScheduler={() => handleNavigate('ebbinghaus-scheduler')}
-        />
-        <DashboardStats onNavigateToBadges={() => handleNavigate('badges')} />
-        <DailyStudyHabitTracker />
-        <StudyDuels id="study-duels" onNavigateToScheduler={() => handleNavigate('ebbinghaus-scheduler')} />
-        <Badges id="badges" onNavigate={handleNavigate} />
-        <ProcrastinationAnalyzer onNavigateToToolkit={() => handleNavigate('toolkit')} />
-        <DiagnosticQuiz onNavigateToToolkit={() => handleNavigate('toolkit')} />
-        <CognitiveToolkit />
-        <AICoachPanel />
+      <button
+        type="button"
+        onClick={() => mainRef.current?.focus()}
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:right-2 focus:z-[100] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-amber-400 focus:text-slate-950 focus:font-bold"
+      >
+        پرش به محتوای اصلی
+      </button>
+
+      <Navbar current={route.view} />
+
+      <main id="main" ref={mainRef} tabIndex={-1} className="flex-1 outline-none">
+        {route.view !== 'home' && <ViewHeader view={route.view} />}
+        <Suspense fallback={<ViewLoading />}>
+          {route.view === 'home' && <HomeView />}
+          {route.view === 'study' && <StudyView />}
+          {route.view === 'diagnose' && <DiagnoseView />}
+          {route.view === 'progress' && <ProgressView />}
+        </Suspense>
       </main>
 
-      <EbbinghausNotificationCenter
-        onNavigateToScheduler={() => handleNavigate('ebbinghaus-scheduler')}
-        onNavigateToDuels={() => handleNavigate('study-duels')}
-      />
+      <EbbinghausNotificationCenter onNavigateToScheduler={() => goToSection('ebbinghaus-scheduler')} />
 
-      <Footer onNavigate={handleNavigate} />
+      <Footer />
+      <BottomNav current={route.view} />
     </div>
   );
 }

@@ -20,6 +20,7 @@ import {
   Layers,
   Timer
 } from 'lucide-react';
+import { goToSection } from '../shell/navigation';
 
 export interface StudyDayRecord {
   date: string; // YYYY-MM-DD
@@ -626,8 +627,7 @@ export const DailyStudyHabitTracker: React.FC = () => {
 
           <button
             onClick={() => {
-              const el = document.getElementById('toolkit');
-              if (el) el.scrollIntoView({ behavior: 'smooth' });
+              goToSection('toolkit');
             }}
             className="flex items-center gap-2 px-3.5 py-2.5 text-xs md:text-sm font-semibold text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-xl transition-all cursor-pointer"
             title="شروع تایمر کار عمیق و ثبت خودکار در زنجیره"

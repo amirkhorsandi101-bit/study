@@ -46,6 +46,7 @@ import {
   EbbinghausReviewStats,
   EBBINGHAUS_INTERVALS
 } from './EbbinghausScheduler';
+import { goToSection } from '../shell/navigation';
 
 export const TOPICS_STORAGE_KEY = 'rahbord_ebbinghaus_topics_queue';
 export const REVIEW_STATS_STORAGE_KEY = 'rahbord_ebbinghaus_review_stats';
@@ -362,8 +363,7 @@ export const IntelligentStudyAdvisor: React.FC<IntelligentStudyAdvisorProps> = (
           <div className="flex items-center gap-2.5 shrink-0">
             <button
               onClick={() => {
-                const el = document.getElementById('weekly-insight');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
+                goToSection('weekly-insight');
               }}
               className="px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 hover:bg-slate-800 text-amber-300 font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer"
             >

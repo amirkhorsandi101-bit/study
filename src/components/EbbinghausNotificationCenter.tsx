@@ -388,7 +388,7 @@ export const EbbinghausNotificationCenter: React.FC<EbbinghausNotificationCenter
       {/* =========================================================================
           2. FLOATING STATUS PILL / NOTIFICATION BADGE
          ========================================================================= */}
-      <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2">
+      <div className="fixed bottom-20 right-4 lg:bottom-6 lg:right-6 z-40 flex items-center gap-2">
         <button
           onClick={() => setIsDrawerOpen(!isDrawerOpen)}
           className="group relative p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 hover:border-amber-400/50 shadow-2xl backdrop-blur-md flex items-center gap-3 transition-all cursor-pointer hover:shadow-amber-500/10 text-right"
