@@ -7,7 +7,8 @@ import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { Navbar, BottomNav } from './shell/Navbar';
 import { Footer } from './shell/Footer';
 import { ViewHeader, ViewLoading } from './shell/ViewHeader';
-import { SITE_TITLE, SITE_NAME, getView } from './shell/views';
+import { SectionTabs } from './shell/SectionTabs';
+import { SITE_TITLE, SITE_NAME, getView, activeSectionFor } from './shell/views';
 import { parseHash, scrollWhenReady, goToSection, type Route } from './shell/navigation';
 import { EbbinghausNotificationCenter } from './components/EbbinghausNotificationCenter';
 import HomeView from './views/HomeView';
@@ -55,11 +56,12 @@ export default function App() {
 
       <main id="main" ref={mainRef} tabIndex={-1} className="flex-1 outline-none">
         {route.view !== 'home' && <ViewHeader view={route.view} />}
+        <SectionTabs view={route.view} active={activeSectionFor(route.view, route.section)} />
         <Suspense fallback={<ViewLoading />}>
           {route.view === 'home' && <HomeView />}
-          {route.view === 'study' && <StudyView />}
-          {route.view === 'diagnose' && <DiagnoseView />}
-          {route.view === 'progress' && <ProgressView />}
+          {route.view === 'study' && <StudyView section={route.section} />}
+          {route.view === 'diagnose' && <DiagnoseView section={route.section} />}
+          {route.view === 'progress' && <ProgressView section={route.section} />}
         </Suspense>
       </main>
 

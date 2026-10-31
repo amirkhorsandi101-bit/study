@@ -58,6 +58,7 @@ export const VIEWS: ViewMeta[] = [
     description: 'مشکل اصلی مطالعه‌ات را پیدا کن و راهکار عملی بگیر.',
     sections: [
       { id: 'quiz', label: 'تست عارضه‌یابی' },
+      { id: 'problems', label: 'مشکل‌های رایج' },
       { id: 'procrastination-analyzer', label: 'تحلیل اهمال‌کاری' },
       { id: 'coach', label: 'مشاور هوشمند' },
       { id: 'toolkit', label: 'جعبه ابزار' },
@@ -74,6 +75,7 @@ export const VIEWS: ViewMeta[] = [
       { id: 'study-advisor', label: 'مشاور اولویت‌ها' },
       { id: 'weekly-insight', label: 'بینش هفتگی' },
       { id: 'badges', label: 'نشان‌ها' },
+      ...(FEATURES.duels ? [{ id: 'study-duels', label: 'دوئل مطالعه' }] : []),
     ],
   },
 ];
@@ -82,7 +84,7 @@ export const VIEWS: ViewMeta[] = [
 export const SECTION_VIEW: Record<string, ViewId> = {
   hero: 'home',
   'dashboard-hub': 'home',
-  problems: 'home',
+  problems: 'diagnose',
   'ebbinghaus-scheduler': 'study',
   'adaptive-scheduler': 'study',
   simulator: 'study',
@@ -97,6 +99,13 @@ export const SECTION_VIEW: Record<string, ViewId> = {
   badges: 'progress',
   ...(FEATURES.duels ? { 'study-duels': 'progress' as ViewId } : {}),
 };
+
+/** تبِ فعال یک صفحه؛ اگر بخش معتبر نباشد، اولین تب. */
+export function activeSectionFor(view: ViewId, section?: string): string | undefined {
+  const sections = getView(view).sections;
+  if (sections.length === 0) return undefined;
+  return sections.some((x) => x.id === section) ? section : sections[0].id;
+}
 
 export function getView(id: ViewId): ViewMeta {
   return VIEWS.find((v) => v.id === id) ?? VIEWS[0];

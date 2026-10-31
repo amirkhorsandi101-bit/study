@@ -76,9 +76,10 @@ export function goToSection(sectionId: string): void {
   const targetView = SECTION_VIEW[sectionId];
   if (!targetView) return; // بخش غیرفعال (مثلاً دوئل)
 
-  const current = parseHash(window.location.hash);
-  if (current.view !== targetView) {
-    window.location.hash = hashFor(targetView, sectionId);
+  const target = hashFor(targetView, sectionId);
+  if (window.location.hash !== target) {
+    // hash عوض می‌شود؛ App صفحه و تب را باز می‌کند و به بخش اسکرول می‌کند
+    window.location.hash = target;
     return;
   }
   scrollWhenReady(sectionId);
