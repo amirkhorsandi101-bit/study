@@ -26,7 +26,9 @@ import {
   Activity,
   Award,
   Filter,
-  BarChart2
+  BarChart2,
+  Moon,
+  BellOff
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -735,6 +737,30 @@ export const IntelligentStudyAdvisor: React.FC<IntelligentStudyAdvisorProps> = (
                     «{activeAnalyzedTopic.prescribedMethod.cognitiveRationale}»
                   </p>
                 </div>
+
+                {/* Launch High-Priority Review in Study Focus Mode */}
+                <button
+                  onClick={() => {
+                    try {
+                      localStorage.setItem('rahbord_launch_focus_topic_id', activeAnalyzedTopic.topic.id);
+                      localStorage.setItem('rahbord_study_focus_mode_active', 'true');
+                      window.dispatchEvent(new CustomEvent('rahbord_launch_focus_session', { detail: { topicId: activeAnalyzedTopic.topic.id } }));
+                      window.dispatchEvent(new Event('rahbord_study_focus_mode_changed'));
+                    } catch (e) {
+                      console.error(e);
+                    }
+                    if (onNavigateToScheduler) {
+                      onNavigateToScheduler();
+                    } else {
+                      const el = document.getElementById('ebbinghaus-scheduler');
+                      if (el) el.scrollIntoView({ behavior: 'smooth' });
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-gradient-to-r from-amber-400 via-rose-500 to-amber-400 hover:opacity-95 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20 active:scale-95 transition-all cursor-pointer"
+                >
+                  <Moon className="w-4 h-4 text-slate-950" />
+                  <span>شروع مرور در حالت تمرکز عمیق (Study Focus Mode) 🚀</span>
+                </button>
               </div>
             )}
           </div>

@@ -38,7 +38,14 @@ import {
   FileSpreadsheet,
   Swords,
   Compass,
-  Cpu
+  Cpu,
+  Moon,
+  Maximize2,
+  Minimize2,
+  Pause,
+  ShieldAlert,
+  FileText,
+  Zap
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -342,6 +349,7 @@ export const EbbinghausScheduler: React.FC = () => {
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('default');
   
   // UI Tabs & Filters
+  const [schedulerViewMode, setSchedulerViewMode] = useState<'tasks' | 'analytics'>('tasks');
   const [activeTab, setActiveTab] = useState<'due_today' | 'upcoming' | 'mastered' | 'all'>('due_today');
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -383,6 +391,209 @@ export const EbbinghausScheduler: React.FC = () => {
 
   // Time remaining until next daily notification
   const [timeUntilReminder, setTimeUntilReminder] = useState<string>('');
+
+  // --- STUDY FOCUS MODE (Auto-Mute Notifications & Interface Dimming) ---
+  const [isStudyFocusMode, setIsStudyFocusMode] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('rahbord_study_focus_mode_active');
+      return saved === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const [activeFocusSession, setActiveFocusSession] = useState<{
+    topic: EbbinghausTopicItem;
+    isHighPriority: boolean;
+    advisorUrgencyScore: number;
+    advisorRiskLevel: 'critical' | 'high' | 'moderate' | 'secure';
+    prescribedMethod: string;
+    durationMinutes: number;
+    remainingSeconds: number;
+    isPaused: boolean;
+    scratchNotes: string;
+    isDimmed: boolean;
+    startedAt: number;
+  } | null>(null);
+
+  // Fullscreen (Zen Mode) state
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const schedulerContainerRef = useRef<HTMLDivElement>(null);
+
+  const toggleFullscreen = async () => {
+    if (!isFullscreen) {
+      setIsFullscreen(true);
+      try {
+        if (schedulerContainerRef.current?.requestFullscreen) {
+          await schedulerContainerRef.current.requestFullscreen();
+        }
+      } catch {
+        // In-app fixed overlay serves as robust fallback
+      }
+      showToast('حالت تمام‌صفحه فعال شد', 'حواس‌پرتی‌های محیطی حذف شدند. برای خروج کلید Esc یا دکمه بالای صفحه را بزنید.', 'success');
+    } else {
+      setIsFullscreen(false);
+      try {
+        if (document.fullscreenElement && document.exitFullscreen) {
+          await document.exitFullscreen();
+        }
+      } catch {}
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+        try {
+          if (document.fullscreenElement && document.exitFullscreen) {
+            document.exitFullscreen();
+          }
+        } catch {}
+      }
+    };
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, [isFullscreen]);
+
+  const toggleStudyFocusMode = (newState?: boolean) => {
+    const nextVal = typeof newState === 'boolean' ? newState : !isStudyFocusMode;
+    setIsStudyFocusMode(nextVal);
+    try {
+      localStorage.setItem('rahbord_study_focus_mode_active', String(nextVal));
+      window.dispatchEvent(new Event('rahbord_study_focus_mode_changed'));
+    } catch (e) {
+      console.error(e);
+    }
+    showToast(
+      nextVal ? 'حالت تمرکز عمیق (Study Focus Mode) فعال شد' : 'حالت تمرکز غیرفعال شد',
+      nextVal
+        ? 'کلیه اعلان‌ها برای جلوگیری از گسست توجه مسدود و بی‌صدا شدند. هنگام مرور، صفحه تاریک خواهد شد.'
+        : 'اعلان‌های سیستم به حالت عادی برگشتند.',
+      nextVal ? 'success' : 'info'
+    );
+  };
+
+  // Helper to determine Advisor Priority & Retrievability
+  const getTopicAdvisorPriority = (topic: EbbinghausTopicItem) => {
+    const cycleStabilities = [1.2, 3.5, 8.0, 18.0, 38.0, 90.0];
+    const cycleIdx = Math.min(Math.max(0, topic.currentCycle), cycleStabilities.length - 1);
+    const baseStability = cycleStabilities[cycleIdx];
+
+    const t = topic.lastReviewedDaysAgo;
+    const retrievabilityRaw = Math.exp(-t / baseStability) * 100;
+    const currentRetrievability = Math.max(5, Math.min(100, Math.round(retrievabilityRaw)));
+
+    const targetInterval = EBBINGHAUS_INTERVALS[Math.min(topic.currentCycle, EBBINGHAUS_INTERVALS.length - 1)] || 1;
+    const daysUntilTargetReview = targetInterval - t;
+
+    const urgencyScore = Math.round((100 - currentRetrievability) * 1.1 + (daysUntilTargetReview <= 0 ? 35 + Math.abs(daysUntilTargetReview) * 5 : 0));
+    const isCritical = currentRetrievability < 45 || daysUntilTargetReview < -1;
+    const isHigh = currentRetrievability < 68 || daysUntilTargetReview <= 0;
+    const riskLevel: 'critical' | 'high' | 'moderate' | 'secure' = isCritical ? 'critical' : isHigh ? 'high' : currentRetrievability < 84 ? 'moderate' : 'secure';
+
+    return {
+      currentRetrievability,
+      daysUntilTargetReview,
+      urgencyScore,
+      isHighPriority: isCritical || isHigh,
+      riskLevel,
+      suggestedDurationMinutes: isCritical ? 15 : isHigh ? 12 : 10
+    };
+  };
+
+  // Start a Review Session in Study Focus Mode
+  const startFocusReviewSession = (topic: EbbinghausTopicItem, autoMuteAndDim = true) => {
+    const priority = getTopicAdvisorPriority(topic);
+    
+    // Automatically enable Study Focus Mode & Mute notifications
+    if (autoMuteAndDim) {
+      setIsStudyFocusMode(true);
+      try {
+        localStorage.setItem('rahbord_study_focus_mode_active', 'true');
+        window.dispatchEvent(new Event('rahbord_study_focus_mode_changed'));
+      } catch {}
+    }
+
+    const durationMins = priority.suggestedDurationMinutes;
+    setActiveFocusSession({
+      topic,
+      isHighPriority: priority.isHighPriority,
+      advisorUrgencyScore: priority.urgencyScore,
+      advisorRiskLevel: priority.riskLevel,
+      prescribedMethod: topic.recommendedMethod,
+      durationMinutes: durationMins,
+      remainingSeconds: durationMins * 60,
+      isPaused: false,
+      scratchNotes: '',
+      isDimmed: autoMuteAndDim,
+      startedAt: Date.now()
+    });
+
+    if (notifSettings.soundEnabled && autoMuteAndDim) {
+      playAudioFeedback('success');
+    }
+
+    showToast(
+      '🚀 جلسه مرور با فوکوس مد آغاز شد',
+      `اعلان‌های سیستم بی‌صدا و رابط کاربری تاریک شد. تمام تمرکز خود را روی بازیابی مبحث «${topic.topicName}» بگذارید.`,
+      'success'
+    );
+  };
+
+  // Focus Session Countdown Timer
+  useEffect(() => {
+    if (!activeFocusSession || activeFocusSession.isPaused) return;
+
+    const interval = setInterval(() => {
+      setActiveFocusSession(prev => {
+        if (!prev) return null;
+        if (prev.remainingSeconds <= 1) {
+          playAudioFeedback('alert');
+          return { ...prev, remainingSeconds: 0, isPaused: true };
+        }
+        return { ...prev, remainingSeconds: prev.remainingSeconds - 1 };
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [activeFocusSession?.isPaused]);
+
+  // Listen for launch request from IntelligentStudyAdvisor
+  useEffect(() => {
+    const handleLaunchFromAdvisor = (e: any) => {
+      const targetId = e?.detail?.topicId || localStorage.getItem('rahbord_launch_focus_topic_id');
+      if (targetId) {
+        localStorage.removeItem('rahbord_launch_focus_topic_id');
+        const found = topics.find(t => t.id === targetId);
+        if (found) {
+          startFocusReviewSession(found, true);
+        }
+      }
+    };
+
+    window.addEventListener('rahbord_launch_focus_session', handleLaunchFromAdvisor);
+    // Also check on mount
+    const pendingId = localStorage.getItem('rahbord_launch_focus_topic_id');
+    if (pendingId) {
+      localStorage.removeItem('rahbord_launch_focus_topic_id');
+      const found = topics.find(t => t.id === pendingId);
+      if (found) {
+        startFocusReviewSession(found, true);
+      }
+    }
+
+    return () => window.removeEventListener('rahbord_launch_focus_session', handleLaunchFromAdvisor);
+  }, [topics]);
 
   // Toast helper
   const showToast = (title: string, message: string, type: 'success' | 'alert' | 'info' = 'info') => {
@@ -1221,7 +1432,58 @@ export const EbbinghausScheduler: React.FC = () => {
   };
 
   return (
-    <section id="ebbinghaus-scheduler" className="py-20 px-6 max-w-6xl mx-auto border-t border-slate-800/80 scroll-mt-20">
+    <section 
+      ref={schedulerContainerRef}
+      id="ebbinghaus-scheduler" 
+      className={isFullscreen 
+        ? "fixed inset-0 z-50 bg-slate-950 overflow-y-auto p-4 sm:p-8 flex flex-col scrollbar-thin selection:bg-amber-400/20 selection:text-amber-200"
+        : "py-20 px-6 max-w-6xl mx-auto border-t border-slate-800/80 scroll-mt-20"
+      }
+    >
+      {/* Zen Fullscreen Top Status Banner */}
+      {isFullscreen && (
+        <div className="sticky top-0 z-50 -mx-4 sm:-mx-8 -mt-4 sm:-mt-8 px-6 py-3.5 bg-slate-950/95 backdrop-blur-md border-b border-amber-500/30 flex items-center justify-between mb-8 shadow-2xl">
+          <div className="flex items-center gap-3">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-amber-300">
+                حالت تمام‌صفحه و تمرکز شناختی (Zen Mode)
+              </span>
+              <span className="text-[11px] text-slate-400 hidden md:inline">
+                · حواس‌پرتی‌های مرورگر و اعلان‌های مزاحم حذف شدند
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => toggleStudyFocusMode()}
+              className={`hidden sm:flex items-center gap-1.5 px-3 py-1 text-xs rounded-lg border transition-all cursor-pointer ${
+                isStudyFocusMode 
+                  ? 'bg-amber-400/10 border-amber-400/30 text-amber-300' 
+                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Moon className="w-3.5 h-3.5 text-amber-400" />
+              <span>{isStudyFocusMode ? 'تاریک‌سازی فعال' : 'تاریک‌سازی صفحه'}</span>
+            </button>
+            <span className="text-[10px] text-slate-400 bg-slate-900 border border-slate-800 px-2 py-0.5 rounded font-mono hidden sm:inline">
+              کلید Esc برای خروج
+            </span>
+            <button
+              onClick={toggleFullscreen}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs rounded-xl transition-all cursor-pointer shadow-md shadow-amber-400/20 active:scale-95"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+              <span>خروج از تمام‌صفحه</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Toast Notification Container */}
       {activeToast && (
         <div className="fixed bottom-6 right-6 z-50 max-w-md w-full px-4 animate-in fade-in slide-in-from-bottom-5 duration-300">
@@ -1262,6 +1524,29 @@ export const EbbinghausScheduler: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Fullscreen Toggle Button */}
+            <button
+              onClick={toggleFullscreen}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer shadow-sm active:scale-95 ${
+                isFullscreen
+                  ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-amber-400/20'
+                  : 'bg-slate-900 border-slate-700/80 hover:border-amber-400/50 text-amber-300 hover:text-amber-200'
+              }`}
+              title={isFullscreen ? 'خروج از تمام‌صفحه (Esc)' : 'ورود به حالت تمام‌صفحه بدون حواس‌پرتی'}
+            >
+              {isFullscreen ? (
+                <>
+                  <Minimize2 className="w-3.5 h-3.5" />
+                  <span>خروج از تمام‌صفحه</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
+                  <span>تمام‌صفحه (Zen)</span>
+                </>
+              )}
+            </button>
+
             <button
               onClick={() => setShowSettingsDrawer(!showSettingsDrawer)}
               className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-900 border border-slate-700/80 hover:border-amber-400/50 text-slate-200 hover:text-white transition-all cursor-pointer"
@@ -1346,187 +1631,300 @@ export const EbbinghausScheduler: React.FC = () => {
         </p>
       </div>
 
-      {/* Daily Notification Control Panel / Drawer */}
-      <div className={`mb-8 p-5 rounded-2xl border transition-all duration-300 ${
-        showSettingsDrawer
-          ? 'bg-slate-900/90 border-amber-500/40 shadow-xl shadow-amber-500/5 block'
-          : 'bg-slate-900/50 border-slate-800 hover:border-slate-700'
-      }`}>
-        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-                {notifSettings.enabled ? <BellRing className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
-              </div>
-              <h3 className="text-base font-bold text-white">
-                سیستم اعلان‌های روزانه یادآوری مرور
-              </h3>
-              <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
-                permission === 'granted'
-                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                  : permission === 'denied'
-                  ? 'bg-rose-500/10 text-rose-400 border border-rose-500/30'
-                  : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+      {/* View Mode Switcher: Tasks (Daily Reviews) vs Analytics (Insights & Charts) */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-6 p-1.5 bg-slate-900/90 border border-slate-800 rounded-2xl backdrop-blur-sm">
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setSchedulerViewMode('tasks')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              schedulerViewMode === 'tasks'
+                ? 'bg-amber-400 text-slate-950 shadow-md shadow-amber-400/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            <span>نوبت‌های مرور امروز و مطالعه</span>
+            {stats.dueTodayCount > 0 && (
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                schedulerViewMode === 'tasks' ? 'bg-slate-950 text-amber-300' : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
               }`}>
-                {permission === 'granted' ? 'مجوز مرورگر فعال' : permission === 'denied' ? 'مسدود در مرورگر (هشدار صوتی فعال)' : 'نیاز به تایید مجوز مرورگر'}
+                {stats.dueTodayCount} نیاز به مرور
               </span>
-            </div>
-            <p className="text-xs text-slate-400 leading-relaxed max-w-2xl">
-              هر روز رأس ساعت تنظیمی، مباحث موعد مرور با اعلان سیستمی و زنگ هشدار شناختی یادآوری می‌شوند تا در زمان طلایی قبل از فراموشی بازیابی شوند.
-            </p>
+            )}
+          </button>
+
+          <button
+            onClick={() => setSchedulerViewMode('analytics')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              schedulerViewMode === 'analytics'
+                ? 'bg-amber-400 text-slate-950 shadow-md shadow-amber-400/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4" />
+            <span>آمار پیشرفت و نمودار تحلیلی</span>
+            <span className="text-[10px] text-slate-400 hidden md:inline">({stats.avgRetention}٪ پایداری)</span>
+          </button>
+        </div>
+
+        {/* Quick summary chip */}
+        <div className="hidden lg:flex items-center gap-3 text-xs text-slate-400 px-3">
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span>{stats.masteredCount} مبحث تثبیت دائم</span>
+          </span>
+          <span>•</span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+            <span>{stats.activeCount} در چرخه فاصله‌دار</span>
+          </span>
+        </div>
+      </div>
+
+      {/* Unified Smart Command Strip (Compact Focus Mode + Notification Pills + Quick Launch) */}
+      <div className={`mb-6 p-3 sm:p-3.5 rounded-2xl border transition-all duration-300 ${
+        isStudyFocusMode
+          ? 'bg-gradient-to-r from-rose-950/40 via-slate-900 to-amber-950/30 border-rose-500/50 shadow-lg shadow-rose-500/5'
+          : 'bg-slate-900/70 border-slate-800 hover:border-slate-700/80'
+      }`}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Quick Status & Toggles */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Focus Mode Pill Toggle */}
+            <button
+              onClick={() => toggleStudyFocusMode(!isStudyFocusMode)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                isStudyFocusMode
+                  ? 'bg-rose-500/20 border-rose-500/50 text-rose-200 shadow-sm shadow-rose-500/20'
+                  : 'bg-slate-800/90 border-slate-700 text-slate-300 hover:text-white hover:border-slate-600'
+              }`}
+              title={isStudyFocusMode ? 'کلیک برای غیرفعال‌سازی حالت تمرکز' : 'کلیک برای فعال‌سازی حالت تمرکز عمیق (سکوت اعلان‌ها و تاریک‌ساز)'}
+            >
+              <Moon className={`w-3.5 h-3.5 ${isStudyFocusMode ? 'text-rose-400 animate-pulse' : 'text-slate-400'}`} />
+              <span>تمرکز عمیق (DND):</span>
+              <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
+                isStudyFocusMode ? 'bg-rose-500 text-white' : 'bg-slate-700 text-slate-300'
+              }`}>
+                {isStudyFocusMode ? 'روشن' : 'خاموش'}
+              </span>
+            </button>
+
+            {/* Notification Reminder Pill & Drawer Toggle */}
+            <button
+              onClick={() => setShowSettingsDrawer(!showSettingsDrawer)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                notifSettings.enabled
+                  ? 'bg-amber-500/10 border-amber-500/40 text-amber-300 hover:bg-amber-500/20'
+                  : 'bg-slate-800/90 border-slate-700 text-slate-400 hover:text-white'
+              }`}
+              title="تنظیمات ساعت یادآوری روزانه و صدای هشدار"
+            >
+              {notifSettings.enabled ? <BellRing className="w-3.5 h-3.5 text-amber-400" /> : <BellOff className="w-3.5 h-3.5 text-slate-400" />}
+              <span>یادآوری:</span>
+              <span className="font-mono text-amber-200">
+                {String(notifSettings.reminderHour).padStart(2, '0')}:{String(notifSettings.reminderMinute || 0).padStart(2, '0')}
+              </span>
+              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showSettingsDrawer ? 'rotate-180' : ''}`} />
+            </button>
           </div>
 
-          {/* Quick Notification Settings */}
-          <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-            {/* Daily Enable Toggle */}
-            <button
-              onClick={() => {
-                const nextState = !notifSettings.enabled;
-                saveNotifSettings({ ...notifSettings, enabled: nextState });
-                showToast(
-                  nextState ? 'اعلان روزانه فعال شد' : 'اعلان روزانه متوقف شد',
-                  nextState ? `هر روز رأس ساعت ${String(notifSettings.reminderHour).padStart(2, '0')}:${String(notifSettings.reminderMinute || 0).padStart(2, '0')} یادآوری دریافت خواهید کرد.` : 'یادآوری‌های خودکار متوقف شدند.',
-                  nextState ? 'success' : 'info'
-                );
-              }}
-              className={`flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
-                notifSettings.enabled
-                  ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/20'
-                  : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
-              }`}
-            >
-              {notifSettings.enabled ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <BellOff className="w-4 h-4" />}
-              <span>{notifSettings.enabled ? 'یادآوری خودکار: روشن' : 'یادآوری خودکار: خاموش'}</span>
-            </button>
+          {/* Quick Action: Top Priority Launcher & Add Topic */}
+          <div className="flex flex-wrap items-center gap-2 mr-auto sm:mr-0">
+            {/* Quick action for top priority topic */}
+            {(() => {
+              const topPriority = analyzedTopics.find(t => getTopicAdvisorPriority(t).isHighPriority && t.schedule.isDueToday) || analyzedTopics.find(t => t.schedule.isDueToday) || analyzedTopics[0];
+              if (!topPriority || topPriority.schedule.isMastered) return null;
+              return (
+                <button
+                  onClick={() => startFocusReviewSession(topPriority, true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl bg-gradient-to-r from-amber-400 to-rose-400 hover:from-amber-300 hover:to-rose-300 text-slate-950 transition-all shadow-sm shadow-amber-400/20 active:scale-95 cursor-pointer"
+                  title={`شروع فوری مرور مبحث ${topPriority.topicName}`}
+                >
+                  <Zap className="w-3.5 h-3.5 fill-slate-950" />
+                  <span className="hidden md:inline">شروع پارت اولویت مشاور:</span>
+                  <span className="truncate max-w-[120px]">{topPriority.topicName}</span>
+                </button>
+              );
+            })()}
 
-            {/* Sound Toggle */}
             <button
-              onClick={() => {
-                const nextSound = !notifSettings.soundEnabled;
-                saveNotifSettings({ ...notifSettings, soundEnabled: nextSound });
-                if (nextSound) playAudioFeedback('success');
-              }}
-              className={`p-2 rounded-xl border text-xs transition-colors cursor-pointer ${
-                notifSettings.soundEnabled
-                  ? 'bg-slate-800 border-slate-700 text-amber-400 hover:border-amber-400/50'
-                  : 'bg-slate-800/60 border-slate-800 text-slate-500 hover:text-slate-300'
-              }`}
-              title={notifSettings.soundEnabled ? 'صدای هشدار فعال است' : 'بی‌صدا'}
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 hover:text-white transition-all cursor-pointer"
             >
-              {notifSettings.soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+              <Plus className="w-3.5 h-3.5 text-amber-400" />
+              <span>مبحث جدید</span>
             </button>
-
-            {/* Test Notification Button */}
-            <button
-              onClick={handleTriggerTestNotification}
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-xl bg-slate-800 hover:bg-slate-700/80 border border-slate-700 text-slate-200 hover:text-white transition-colors cursor-pointer"
-            >
-              <Play className="w-3.5 h-3.5 text-amber-400" />
-              <span>تست هشدار هم‌اکنون</span>
-            </button>
-
-            {/* Request Browser Permission if not granted */}
-            {permission !== 'granted' && permission !== 'unsupported' && (
-              <button
-                onClick={handleRequestPermission}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/40 text-amber-300 transition-colors cursor-pointer animate-pulse"
-              >
-                <span>فعال‌سازی نوتیفیکیشن سیستم</span>
-              </button>
-            )}
           </div>
         </div>
 
-        {/* Extended Setting Options (Hour selection & Presets) */}
+        {/* Collapsible Notification Settings Drawer */}
         {showSettingsDrawer && (
-          <div className="mt-6 pt-6 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
-            {/* Time Picker & Presets */}
-            <div className="space-y-3">
-              <label className="block text-slate-300 font-semibold">
-                ساعت یادآوری روزانه (ساعت و دقیقه):
-              </label>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 bg-slate-950 px-3 py-2 rounded-xl border border-slate-700">
-                  <Clock className="w-4 h-4 text-amber-400" />
-                  <select
-                    value={notifSettings.reminderHour}
-                    onChange={(e) => {
-                      saveNotifSettings({ ...notifSettings, reminderHour: Number(e.target.value) });
-                    }}
-                    className="bg-transparent text-white font-bold text-sm focus:outline-none cursor-pointer"
-                  >
-                    {Array.from({ length: 24 }).map((_, h) => (
-                      <option key={h} value={h} className="bg-slate-900 text-white">
-                        ساعت {String(h).padStart(2, '0')}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-slate-500">:</span>
-                  <select
-                    value={notifSettings.reminderMinute || 0}
-                    onChange={(e) => {
-                      saveNotifSettings({ ...notifSettings, reminderMinute: Number(e.target.value) });
-                    }}
-                    className="bg-transparent text-white font-bold text-sm focus:outline-none cursor-pointer"
-                  >
-                    {[0, 15, 30, 45].map((m) => (
-                      <option key={m} value={m} className="bg-slate-900 text-white">
-                        {String(m).padStart(2, '0')}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {timeUntilReminder && (
-                  <span className="text-[11px] text-slate-400">
-                    اعلان بعدی در حدود <strong className="text-amber-300 font-bold">{timeUntilReminder}</strong>
-                  </span>
-                )}
+          <div className="mt-3.5 pt-3.5 border-t border-slate-800 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Bell className="w-4 h-4 text-amber-400" />
+                <h4 className="text-xs font-bold text-white">تنظیمات اعلان روزانه و هشدار شناختی</h4>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                  permission === 'granted'
+                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                }`}>
+                  {permission === 'granted' ? 'مجوز مرورگر فعال است' : 'نیازمند تایید نوتیفیکیشن'}
+                </span>
               </div>
 
-              {/* Study Routine Presets */}
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <span className="text-slate-400 text-[11px]">ساعت‌های پیشنهادی:</span>
-                {[
-                  { label: 'صبح زود (۰۸:۰۰)', h: 8, m: 0 },
-                  { label: 'پس از مدرسه (۱۵:۳۰)', h: 15, m: 30 },
-                  { label: 'عصر طلایی (۱۸:۰۰)', h: 18, m: 0 },
-                  { label: 'پارت شب (۲۱:۳۰)', h: 21, m: 30 }
-                ].map((preset) => (
-                  <button
-                    key={preset.label}
-                    onClick={() => {
-                      saveNotifSettings({ ...notifSettings, reminderHour: preset.h, reminderMinute: preset.m });
-                      showToast('ساعت یادآوری ذخیره شد', `ساعت اعلان روزانه روی ${preset.label} تنظیم گردید.`, 'success');
-                    }}
-                    className={`px-2 py-1 rounded-lg text-[11px] border transition-colors cursor-pointer ${
-                      notifSettings.reminderHour === preset.h && (notifSettings.reminderMinute || 0) === preset.m
-                        ? 'bg-amber-400 text-slate-950 font-bold border-amber-400'
-                        : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:text-white'
-                    }`}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
+              <button
+                onClick={() => setShowSettingsDrawer(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            {/* Scientific Explanation */}
-            <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 text-[11px] text-slate-400 leading-relaxed space-y-1.5">
-              <div className="flex items-center gap-1.5 text-amber-300 font-semibold">
-                <Lightbulb className="w-3.5 h-3.5" />
-                <span>بهترین زمان برای مرور روزانه چه موقع است؟</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              <div className="space-y-3 bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-300 font-semibold">ساعت ارسال هشدار:</span>
+                  <div className="flex items-center gap-2 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-700">
+                    <Clock className="w-3.5 h-3.5 text-amber-400" />
+                    <select
+                      value={notifSettings.reminderHour}
+                      onChange={(e) => saveNotifSettings({ ...notifSettings, reminderHour: Number(e.target.value) })}
+                      className="bg-transparent text-white font-bold text-xs focus:outline-none cursor-pointer"
+                    >
+                      {Array.from({ length: 24 }).map((_, h) => (
+                        <option key={h} value={h} className="bg-slate-900 text-white">
+                          ساعت {String(h).padStart(2, '0')}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-slate-500">:</span>
+                    <select
+                      value={notifSettings.reminderMinute || 0}
+                      onChange={(e) => saveNotifSettings({ ...notifSettings, reminderMinute: Number(e.target.value) })}
+                      className="bg-transparent text-white font-bold text-xs focus:outline-none cursor-pointer"
+                    >
+                      {[0, 15, 30, 45].map((m) => (
+                        <option key={m} value={m} className="bg-slate-900 text-white">
+                          {String(m).padStart(2, '0')}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-slate-400 text-[11px]">پارت‌های پیشنهادی:</span>
+                  {[
+                    { label: 'صبح (۰۸:۰۰)', h: 8, m: 0 },
+                    { label: 'عصر (۱۸:۰۰)', h: 18, m: 0 },
+                    { label: 'شب (۲۱:۳۰)', h: 21, m: 30 }
+                  ].map((preset) => (
+                    <button
+                      key={preset.label}
+                      onClick={() => {
+                        saveNotifSettings({ ...notifSettings, reminderHour: preset.h, reminderMinute: preset.m });
+                        showToast('ساعت یادآوری تنظیم شد', `ساعت یادآوری روی ${preset.label} قرار گرفت.`, 'success');
+                      }}
+                      className={`px-2 py-0.5 rounded text-[11px] border transition-colors cursor-pointer ${
+                        notifSettings.reminderHour === preset.h && (notifSettings.reminderMinute || 0) === preset.m
+                          ? 'bg-amber-400 text-slate-950 font-bold border-amber-400'
+                          : 'bg-slate-900 text-slate-300 border-slate-700 hover:text-white'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <p>
-                مرور ابینگهاوس نباید همزمان با مطالعه مباحث جدید باشد. بهترین زمان، در پایان پارت مطالعه عصر یا قبل از استراحت شبانه است تا مغز در فاز خواب REM سیناپس‌های مرتبط را تثبیت و کدگذاری کند.
-              </p>
+
+              <div className="flex flex-col justify-between gap-3 bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const nextState = !notifSettings.enabled;
+                      saveNotifSettings({ ...notifSettings, enabled: nextState });
+                    }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                      notifSettings.enabled
+                        ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
+                        : 'bg-slate-900 border-slate-700 text-slate-400'
+                    }`}
+                  >
+                    {notifSettings.enabled ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <BellOff className="w-3.5 h-3.5" />}
+                    <span>{notifSettings.enabled ? 'هشدار روزانه فعال' : 'هشدار روزانه خاموش'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const nextSound = !notifSettings.soundEnabled;
+                      saveNotifSettings({ ...notifSettings, soundEnabled: nextSound });
+                      if (nextSound) playAudioFeedback('success');
+                    }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                      notifSettings.soundEnabled
+                        ? 'bg-slate-900 border-slate-700 text-amber-400'
+                        : 'bg-slate-900/60 border-slate-800 text-slate-500'
+                    }`}
+                  >
+                    {notifSettings.soundEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+                    <span>{notifSettings.soundEnabled ? 'صدا روشن' : 'بی‌صدا'}</span>
+                  </button>
+
+                  <button
+                    onClick={handleTriggerTestNotification}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition-colors cursor-pointer"
+                  >
+                    <Play className="w-3 h-3 text-amber-400" />
+                    <span>تست اعلان</span>
+                  </button>
+                </div>
+
+                {permission !== 'granted' && permission !== 'unsupported' && (
+                  <button
+                    onClick={handleRequestPermission}
+                    className="w-full flex items-center justify-center gap-1.5 py-1.5 text-[11px] font-bold rounded-lg bg-amber-400 text-slate-950 hover:bg-amber-300 transition-colors cursor-pointer"
+                  >
+                    <span>اجازه دادن به اعلان‌های سیستم در مرورگر</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Metric Cards Strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      {/* Operational Clean View: Tasks Mode Quick Mini-Stat Bar */}
+      {schedulerViewMode === 'tasks' && (
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6 px-4 py-2.5 rounded-xl bg-slate-900/40 border border-slate-800/80 text-xs text-slate-400">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full ${stats.dueTodayCount > 0 ? 'bg-rose-500 animate-ping' : 'bg-emerald-400'}`}></span>
+              <span>امروز: <strong className={stats.dueTodayCount > 0 ? 'text-rose-400 font-bold' : 'text-slate-200'}>{stats.dueTodayCount} مبحث</strong> نیاز به مرور</span>
+            </span>
+            <span>•</span>
+            <span>در چرخه فاصله‌دار: <strong className="text-amber-300 font-bold">{stats.activeCount}</strong></span>
+            <span>•</span>
+            <span>تثبیت دائم: <strong className="text-emerald-300 font-bold">{stats.masteredCount}</strong></span>
+            <span>•</span>
+            <span>ماندگاری کل: <strong className="text-cyan-300 font-bold">{stats.avgRetention}٪</strong></span>
+          </div>
+
+          <button
+            onClick={() => setSchedulerViewMode('analytics')}
+            className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center gap-1 font-semibold cursor-pointer"
+          >
+            <span>مشاهده نمودار و تحلیل پیشرفته</span>
+            <span>←</span>
+          </button>
+        </div>
+      )}
+
+      {/* Analytics Mode: Metric KPI Cards + Interactive Recharts Section */}
+      {schedulerViewMode === 'analytics' && (
+        <div className="space-y-6 mb-8 animate-in fade-in duration-200">
+          {/* Metric Cards Strip */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {/* Metric 1: Due Today */}
         <div className={`p-4 rounded-xl border transition-all ${
           stats.dueTodayCount > 0
@@ -1908,9 +2306,21 @@ export const EbbinghausScheduler: React.FC = () => {
                 وجود مطالب فراموش‌شده در نمودار نه تنها نشانه ضعف نیست، بلکه شاخص حیاتی فرآیند «یادآوری چالش‌برانگیز (Desirable Difficulty)» است. هر بار که مطلبی فراموش و بلافاصله طبق چرخه ریست می‌شود، مسیرهای عصبی هیپوکامپ مجدداً با پایداری ۳ برابری سیم‌کشی می‌شوند تا در نهایت ستون‌های سبز (مرور موفق) بر ستون‌های قرمز تسلط کامل پیدا کنند.
               </div>
             </div>
+
+            {/* Back to Tasks Button */}
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setSchedulerViewMode('tasks')}
+                className="flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl bg-amber-400 text-slate-950 hover:bg-amber-300 transition-all cursor-pointer shadow-md shadow-amber-400/20"
+              >
+                <span>← بازگشت به لیست نوبت‌های مطالعه و مرور</span>
+              </button>
+            </div>
           </div>
         )}
       </div>
+    </div>
+  )}
 
       {/* Tabs & Search & Filter Bar */}
       <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 mb-6">
@@ -2062,6 +2472,13 @@ export const EbbinghausScheduler: React.FC = () => {
                         <span>{sched.statusLabel}</span>
                       </span>
 
+                      {getTopicAdvisorPriority(item).isHighPriority && (
+                        <span className="text-[10px] px-2.5 py-0.5 rounded-full font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1 animate-pulse">
+                          <Flame className="w-3 h-3 text-rose-400" />
+                          <span>پیشنهاد اولویت مشاور ({getTopicAdvisorPriority(item).riskLevel === 'critical' ? 'ریسک بحرانی' : 'پنجره طلایی'})</span>
+                        </span>
+                      )}
+
                       <span className="text-[11px] text-slate-400">
                         آخرین مرور: {item.lastReviewedDaysAgo === 0 ? 'امروز' : `${item.lastReviewedDaysAgo} روز پیش`}
                       </span>
@@ -2140,49 +2557,73 @@ export const EbbinghausScheduler: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex flex-wrap items-center gap-2 w-full justify-end">
-                      {/* Mark Reviewed Button */}
+                    {/* Action Buttons: Streamlined Hierarchy */}
+                    <div className="flex flex-wrap items-center gap-2 w-full justify-between sm:justify-end pt-2">
+                      {/* Secondary Actions: Compact Icon Cluster */}
+                      <div className="flex items-center gap-1 order-2 sm:order-1">
+                        {/* Delete */}
+                        <button
+                          onClick={() => handleDeleteTopic(item.id)}
+                          className="p-1.5 rounded-lg bg-slate-800/40 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/30 transition-colors cursor-pointer"
+                          title="حذف مبحث از برنامه"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+
+                        {/* Snooze 24h */}
+                        {!sched.isMastered && (
+                          <button
+                            onClick={() => handleSnoozeTopic(item.id)}
+                            className="p-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-700 text-slate-400 hover:text-cyan-300 border border-slate-700/60 transition-colors cursor-pointer"
+                            title="تعویق ۲۴ ساعته (Snooze)"
+                          >
+                            <Clock className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+
+                        {/* Failed recall / Reset cycle */}
+                        {item.currentCycle > 0 && !sched.isMastered && (
+                          <button
+                            onClick={() => handleMarkRecallFailed(item.id)}
+                            className="p-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-700 text-slate-400 hover:text-amber-300 border border-slate-700/60 transition-colors cursor-pointer"
+                            title="فراموش شده بود (ریست چرخه برای بازسازی سیناپسی)"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Primary Actions: Focused & Prominent */}
                       {!sched.isMastered && (
-                        <button
-                          onClick={() => handleMarkReviewedSuccess(item.id)}
-                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition-all shadow-sm shadow-emerald-500/20 active:scale-95 cursor-pointer"
-                        >
-                          <Check className="w-4 h-4" />
-                          <span>مرور شد و یادم بود</span>
-                        </button>
-                      )}
+                        <div className="flex items-center gap-1.5 order-1 sm:order-2 flex-1 sm:flex-initial justify-end">
+                          {/* Quick Mark Reviewed Button */}
+                          <button
+                            onClick={() => handleMarkReviewedSuccess(item.id)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:border-emerald-500/50 transition-all cursor-pointer"
+                            title="مرور به صورت آفلاین انجام شد و در خاطرم بود"
+                          >
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>مرور شد</span>
+                          </button>
 
-                      {/* Failed recall / Reset cycle */}
-                      {item.currentCycle > 0 && !sched.isMastered && (
-                        <button
-                          onClick={() => handleMarkRecallFailed(item.id)}
-                          className="p-2 text-xs font-medium rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-amber-300 border border-slate-700 transition-colors cursor-pointer"
-                          title="فراموش شده بود (ریست چرخه برای بازسازی سیناپسی)"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                        </button>
+                          {/* Primary CTA: Start Focused Session */}
+                          <button
+                            type="button"
+                            onClick={() => startFocusReviewSession(item, true)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm ${
+                              getTopicAdvisorPriority(item).isHighPriority
+                                ? 'bg-gradient-to-r from-amber-400 to-rose-400 hover:from-amber-300 hover:to-rose-300 text-slate-950 shadow-amber-400/20 active:scale-95'
+                                : 'bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 active:scale-95'
+                            }`}
+                            title="شروع جلسه مرور با فوکوس مد: بی‌صدا کردن خودکار اعلان‌ها و تاریک‌سازی صفحه"
+                          >
+                            <Moon className={`w-3.5 h-3.5 ${getTopicAdvisorPriority(item).isHighPriority ? 'text-slate-950 fill-slate-950' : 'text-amber-400'}`} />
+                            <span>
+                              {getTopicAdvisorPriority(item).isHighPriority ? 'مرور فوری 🚀' : 'مرور متمرکز'}
+                            </span>
+                          </button>
+                        </div>
                       )}
-
-                      {/* Snooze 24h */}
-                      {!sched.isMastered && (
-                        <button
-                          onClick={() => handleSnoozeTopic(item.id)}
-                          className="p-2 text-xs font-medium rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-cyan-300 border border-slate-700 transition-colors cursor-pointer"
-                          title="به تعویق انداختن ۲۴ ساعته (Snooze)"
-                        >
-                          <Clock className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-
-                      {/* Delete */}
-                      <button
-                        onClick={() => handleDeleteTopic(item.id)}
-                        className="p-2 text-xs font-medium rounded-xl bg-slate-800/60 hover:bg-rose-500/10 text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/30 transition-colors cursor-pointer"
-                        title="حذف مبحث از برنامه"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -2468,6 +2909,212 @@ export const EbbinghausScheduler: React.FC = () => {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          STUDY FOCUS MODE: IMMERSIVE SPOTLIGHT REVIEW HUD (DIMMED INTERFACE)
+         ========================================================================= */}
+      {activeFocusSession && (
+        <div className={`fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 transition-all duration-300 ${
+          activeFocusSession.isDimmed
+            ? 'bg-slate-950/95 backdrop-blur-lg'
+            : 'bg-slate-950/75 backdrop-blur-sm'
+        }`}>
+          <div className="relative w-full max-w-2xl bg-slate-900 border border-amber-500/50 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 text-right animate-in fade-in zoom-in-95 duration-200">
+            {/* Ambient Top Glow in Spotlight */}
+            <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-80 h-32 bg-amber-500/20 rounded-full blur-3xl pointer-events-none" />
+
+            {/* Header: Focus Mode Status & Mute Indicator */}
+            <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-amber-400 text-slate-950 font-bold flex items-center justify-center shadow-lg shadow-amber-400/30 ring-2 ring-amber-400/50 animate-pulse">
+                  <Moon className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base sm:text-lg font-bold text-white">
+                      جلسه مرور در حالت تمرکز عمیق (Study Focus Mode)
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                      🔇 DND فعال
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    رابط کاربری تاریک شده و اعلان‌های سیستم برای ایزولاسیون کامل حواس مسدود هستند.
+                  </p>
+                </div>
+              </div>
+
+              {/* Controls: Dim toggle & Close */}
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setActiveFocusSession(prev => prev ? { ...prev, isDimmed: !prev.isDimmed } : null)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
+                    activeFocusSession.isDimmed
+                      ? 'bg-slate-800 border-amber-500/40 text-amber-300'
+                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                  title="تغییر وضعیت تاریک‌سازی پس‌زمینه"
+                >
+                  <Moon className="w-3.5 h-3.5" />
+                  <span>{activeFocusSession.isDimmed ? 'تاریک‌سازی: فعال' : 'تاریک‌سازی: ملایم'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveFocusSession(null);
+                    showToast('خروج از جلسه تمرکز', 'رابط کاربری به حالت عادی بازگشت.', 'info');
+                  }}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+                  title="بستن پنجره تمرکز"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Topic Spotlight Meta Card */}
+            <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold px-2.5 py-0.5 rounded-md bg-slate-800 text-amber-300 border border-slate-700">
+                    {activeFocusSession.topic.subject}
+                  </span>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+                    نوبت {activeFocusSession.topic.currentCycle + 1} از ۵
+                  </span>
+                </div>
+
+                {activeFocusSession.isHighPriority && (
+                  <span className="text-[11px] font-bold text-rose-400 flex items-center gap-1 bg-rose-500/10 px-2 py-0.5 rounded-md border border-rose-500/20">
+                    <Flame className="w-3.5 h-3.5" />
+                    <span>پیشنهاد اولویت مشاور هوشمند (ضریب فوریت: {activeFocusSession.advisorUrgencyScore})</span>
+                  </span>
+                )}
+              </div>
+
+              <h4 className="text-lg sm:text-xl font-bold text-white">
+                {activeFocusSession.topic.topicName}
+              </h4>
+
+              {/* Prescribed Active Recall Technique */}
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-200 space-y-1">
+                <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                  <Brain className="w-4 h-4" />
+                  <span>تکنیک بازیابی فعال پیشنهادی برای این مبحث:</span>
+                </div>
+                <p className="leading-relaxed text-slate-200">
+                  {activeFocusSession.prescribedMethod}
+                </p>
+              </div>
+            </div>
+
+            {/* Countdown Focus Timer Display */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-2xl bg-slate-950/90 border border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="text-3xl sm:text-4xl font-mono font-black text-amber-400 tracking-tight tabular-nums">
+                  {Math.floor(activeFocusSession.remainingSeconds / 60).toString().padStart(2, '0')}:
+                  {(activeFocusSession.remainingSeconds % 60).toString().padStart(2, '0')}
+                </div>
+                <div className="text-xs text-slate-400">
+                  <span className="block font-semibold text-white">زمان استاندارد بازیابی</span>
+                  <span>{activeFocusSession.isPaused ? '⏸ متوقف شده' : '⏱ در حال شمارش معکوس'}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveFocusSession(prev => prev ? { ...prev, isPaused: !prev.isPaused } : null)}
+                  className="px-3.5 py-2 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  {activeFocusSession.isPaused ? (
+                    <>
+                      <Play className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>ادامه تایمر</span>
+                    </>
+                  ) : (
+                    <>
+                      <Pause className="w-3.5 h-3.5 text-amber-400" />
+                      <span>توقف موقت</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveFocusSession(prev => prev ? { ...prev, remainingSeconds: prev.remainingSeconds + 300 } : null)}
+                  className="px-3 py-2 text-xs font-semibold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition-colors cursor-pointer"
+                  title="افزودن ۵ دقیقه به زمان مرور"
+                >
+                  +۵ دقیقه
+                </button>
+              </div>
+            </div>
+
+            {/* Active Recall Scratchpad (Blurting Area) */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-amber-400" />
+                <span>فضای یادداشت بازیابی ذهنی (تکنیک برگه سفید / Blurting):</span>
+              </label>
+              <textarea
+                value={activeFocusSession.scratchNotes}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setActiveFocusSession(prev => prev ? { ...prev, scratchNotes: val } : null);
+                }}
+                placeholder="بدون نگاه کردن به کتاب یا جزوه، فرمول‌ها، کلیدواژه‌ها یا نکات این مبحث را اینجا تایپ کنید تا اثر زایگارنیک و سیناپس‌های حافظه فعال شوند..."
+                rows={3}
+                className="w-full bg-slate-950 border border-slate-700/80 rounded-2xl p-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 leading-relaxed resize-none"
+              />
+            </div>
+
+            {/* Review Conclusion Buttons */}
+            <div className="pt-2 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const topicId = activeFocusSession.topic.id;
+                    handleMarkReviewedSuccess(topicId);
+                    setActiveFocusSession(null);
+                  }}
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-xs shadow-md shadow-emerald-500/20 active:scale-95 transition-all cursor-pointer"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>تثبیت شد و یادم بود (ارتقا به نوبت بعدی)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const topicId = activeFocusSession.topic.id;
+                    handleMarkRecallFailed(topicId);
+                    setActiveFocusSession(null);
+                  }}
+                  className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-rose-400 border border-slate-700 transition-colors cursor-pointer"
+                  title="فراموش شده بود (ریست چرخه برای بازسازی سیناپسی)"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveFocusSession(null);
+                  showToast('پایان جلسه فوکوس', 'رابط کاربری به حالت عادی بازگشت.', 'info');
+                }}
+                className="text-xs text-slate-400 hover:text-white underline cursor-pointer"
+              >
+                خروج از حالت تمرکز
+              </button>
             </div>
           </div>
         </div>

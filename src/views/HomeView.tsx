@@ -1,14 +1,15 @@
 import React from 'react';
 import { HeroSection } from '../components/HeroSection';
+import { Dashboard } from '../components/Dashboard';
 import { ProblemsSection } from '../components/ProblemsSection';
-import { HomeQuickStart } from '../shell/HomeQuickStart';
 import { goToSection } from '../shell/navigation';
 
 export default function HomeView() {
   return (
     <>
       <HeroSection onNavigate={goToSection} />
-      <HomeQuickStart />
+      {/* داشبورد مرکزی: بدون onToggleViewMode، سوئیچ نمای خلوت/کامل نمایش داده نمی‌شود */}
+      <Dashboard id="dashboard-hub" onNavigate={goToSection} />
       <ProblemsSection />
     </>
   );

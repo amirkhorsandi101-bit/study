@@ -24,6 +24,13 @@ export const Navbar: React.FC<NavbarProps> = ({ onNavigate }) => {
         {/* Zone 2: concise single-line nav links */}
         <nav className="hidden lg:flex items-center gap-6 text-sm text-slate-300 font-medium">
           <button 
+            onClick={() => onNavigate('dashboard-hub')} 
+            className="flex items-center gap-1.5 text-amber-300 hover:text-amber-200 transition-colors whitespace-nowrap shrink-0 cursor-pointer font-bold"
+          >
+            <Brain className="w-3.5 h-3.5 text-amber-400" />
+            <span>داشبورد مرکزی</span>
+          </button>
+          <button 
             onClick={() => onNavigate('problems')} 
             className="hover:text-amber-400 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >

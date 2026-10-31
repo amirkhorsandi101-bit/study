@@ -126,6 +126,15 @@ export const EbbinghausNotificationCenter: React.FC<EbbinghausNotificationCenter
     return sorted[0] || null;
   }, [schedules]);
 
+  // Study Focus Mode Mute State (suppresses notifications when user is in deep review session)
+  const [isStudyFocusModeMuted, setIsStudyFocusModeMuted] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('rahbord_study_focus_mode_active') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
   // Request browser permission
   const handleRequestPermission = async () => {
     const granted = await requestBrowserNotificationPermission();
@@ -142,8 +151,30 @@ export const EbbinghausNotificationCenter: React.FC<EbbinghausNotificationCenter
     }
   };
 
-  // Show gentle in-app toast
+  // Listen for Study Focus Mode changes from EbbinghausScheduler
+  useEffect(() => {
+    const handleFocusModeChange = () => {
+      try {
+        const active = localStorage.getItem('rahbord_study_focus_mode_active') === 'true';
+        setIsStudyFocusModeMuted(active);
+        if (active) {
+          setActiveToast(null); // dismiss any lingering toast when entering focus mode
+        }
+      } catch {}
+    };
+
+    window.addEventListener('rahbord_study_focus_mode_changed', handleFocusModeChange);
+    window.addEventListener('storage', handleFocusModeChange);
+    return () => {
+      window.removeEventListener('rahbord_study_focus_mode_changed', handleFocusModeChange);
+      window.removeEventListener('storage', handleFocusModeChange);
+    };
+  }, []);
+
+  // Show gentle in-app toast (suppressed during Study Focus Mode)
   const showInAppToast = (toast: ToastAlert) => {
+    const isMuted = isStudyFocusModeMuted || localStorage.getItem('rahbord_study_focus_mode_active') === 'true';
+    if (isMuted) return; // Muted by Study Focus Mode
     if (!settings.inAppToastEnabled) return;
     setActiveToast(toast);
     if (settings.soundEnabled) {
@@ -208,6 +239,10 @@ export const EbbinghausNotificationCenter: React.FC<EbbinghausNotificationCenter
   useEffect(() => {
     const checkScheduledReminders = () => {
       if (!settings.enabled) return;
+      if (isStudyFocusModeMuted || localStorage.getItem('rahbord_study_focus_mode_active') === 'true') {
+        // Study Focus Mode is active: All notifications are muted
+        return;
+      }
 
       const now = new Date();
       const currentHour = now.getHours();
@@ -402,20 +437,32 @@ export const EbbinghausNotificationCenter: React.FC<EbbinghausNotificationCenter
           )}
 
           <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0 group-hover:scale-105 transition-transform">
-            {settings.enabled ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4 text-slate-500" />}
+            {isStudyFocusModeMuted ? (
+              <BellOff className="w-4 h-4 text-rose-400 animate-pulse" />
+            ) : settings.enabled ? (
+              <Bell className="w-4 h-4" />
+            ) : (
+              <BellOff className="w-4 h-4 text-slate-500" />
+            )}
           </div>
 
           <div className="hidden sm:block text-xs pr-0.5">
             <div className="font-bold text-white flex items-center gap-1.5">
               <span>سیستم هشدار مرور</span>
-              {permission === 'granted' ? (
+              {isStudyFocusModeMuted ? (
+                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                  سایلنت فوکوس
+                </span>
+              ) : permission === 'granted' ? (
                 <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" title="اعلان مرورگر فعال است" />
               ) : (
                 <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" title="نیاز به تایید مرورگر" />
               )}
             </div>
             <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-              {dueItems.length > 0
+              {isStudyFocusModeMuted
+                ? '🔇 سایلنت مطالعه فعال است'
+                : dueItems.length > 0
                 ? `${dueItems.length} مبحث موعد مرور امروز`
                 : nextUpcomingItem
                 ? `مرور بعدی: ${nextUpcomingItem.topic.topicName.slice(0, 16)}...`
@@ -431,6 +478,17 @@ export const EbbinghausNotificationCenter: React.FC<EbbinghausNotificationCenter
       {isDrawerOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-lg w-full space-y-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200 text-right">
+            {/* Study Focus Mode DND Notice Banner */}
+            {isStudyFocusModeMuted && (
+              <div className="p-3.5 rounded-2xl bg-rose-950/40 border border-rose-500/40 flex items-center gap-3 text-xs text-rose-200">
+                <BellOff className="w-5 h-5 text-rose-400 shrink-0" />
+                <div>
+                  <strong className="block text-white mb-0.5">حالت تمرکز عمیق مطالعه فعال است:</strong>
+                  <span>کلیه اعلان‌های سیستم و صداهای هشدار بی‌صدا (DND) شده‌اند تا اختلالی در مرور مباحث با اولویت بالا ایجاد نشود.</span>
+                </div>
+              </div>
+            )}
+
             {/* Header */}
             <div className="flex items-center justify-between border-b border-slate-800 pb-4">
               <div className="flex items-center gap-2.5">

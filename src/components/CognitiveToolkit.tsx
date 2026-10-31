@@ -14,7 +14,9 @@ import {
   Plus,
   Headphones,
   Trees,
-  CloudRain
+  CloudRain,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import { FocusAudioPlayer } from './FocusAudioPlayer';
 import { DeepWorkPomodoro } from './DeepWorkPomodoro';
@@ -23,6 +25,9 @@ import { goToSection } from '../shell/navigation';
 
 export const CognitiveToolkit: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'launcher' | 'pomodoro' | 'switcher' | 'braindump' | 'focus' | 'ambient'>('launcher');
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const toolkitContainerRef = useRef<HTMLElement>(null);
+
   const [isFocusModeActive, setIsFocusModeActive] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('rahbord_focus_mode_active');
@@ -31,6 +36,48 @@ export const CognitiveToolkit: React.FC = () => {
       return false;
     }
   });
+
+  const toggleFullscreen = async () => {
+    if (!isFullscreen) {
+      setIsFullscreen(true);
+      try {
+        if (toolkitContainerRef.current?.requestFullscreen) {
+          await toolkitContainerRef.current.requestFullscreen();
+        }
+      } catch {}
+    } else {
+      setIsFullscreen(false);
+      try {
+        if (document.fullscreenElement && document.exitFullscreen) {
+          await document.exitFullscreen();
+        }
+      } catch {}
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+        try {
+          if (document.fullscreenElement && document.exitFullscreen) {
+            document.exitFullscreen();
+          }
+        } catch {}
+      }
+    };
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, [isFullscreen]);
 
   useEffect(() => {
     try {
@@ -135,14 +182,80 @@ export const CognitiveToolkit: React.FC = () => {
   };
 
   return (
-    <section id="toolkit" className="py-20 px-6 max-w-6xl mx-auto border-t border-slate-800/80">
+    <section 
+      ref={toolkitContainerRef}
+      id="toolkit" 
+      className={isFullscreen
+        ? "fixed inset-0 z-50 bg-slate-950 overflow-y-auto p-4 sm:p-8 flex flex-col scrollbar-thin selection:bg-amber-400/20 selection:text-amber-200"
+        : "py-20 px-6 max-w-6xl mx-auto border-t border-slate-800/80"
+      }
+    >
+      {/* Zen Fullscreen Top Status Banner */}
+      {isFullscreen && (
+        <div className="sticky top-0 z-50 -mx-4 sm:-mx-8 -mt-4 sm:-mt-8 px-6 py-3.5 bg-slate-950/95 backdrop-blur-md border-b border-emerald-500/30 flex items-center justify-between mb-8 shadow-2xl">
+          <div className="flex items-center gap-3">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-emerald-300">
+                حالت تمام‌صفحه و ضد اهمال‌کاری (Zen Focus Mode)
+              </span>
+              <span className="text-[11px] text-slate-400 hidden md:inline">
+                · سکوت، تمرکز بر روی یک کار و حذف کلیه سر و صداهای مزاحم
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] text-slate-400 bg-slate-900 border border-slate-800 px-2 py-0.5 rounded font-mono hidden sm:inline">
+              کلید Esc برای بازگشت
+            </span>
+            <button
+              onClick={toggleFullscreen}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl transition-all cursor-pointer shadow-md shadow-emerald-500/20 active:scale-95"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+              <span>خروج از تمام‌صفحه</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="mb-10 space-y-3">
-        <div className="flex items-center gap-2 text-xs text-amber-400 font-semibold tracking-wide">
-          <span>ابزارهای عملیاتی</span>
-          <span aria-hidden="true">/</span>
-          <span>پروتکل‌های تقویت تمرکز و شروع</span>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-2 text-xs text-amber-400 font-semibold tracking-wide">
+            <span>ابزارهای عملیاتی</span>
+            <span aria-hidden="true">/</span>
+            <span>پروتکل‌های تقویت تمرکز و شروع</span>
+          </div>
+
+          {/* Fullscreen Button */}
+          <button
+            onClick={toggleFullscreen}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer shadow-sm active:scale-95 ${
+              isFullscreen
+                ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-emerald-500/20'
+                : 'bg-slate-900 border-slate-700/80 hover:border-emerald-400/50 text-emerald-300 hover:text-emerald-200'
+            }`}
+            title={isFullscreen ? 'خروج از حالت تمام‌صفحه (Esc)' : 'ورود به حالت تمام‌صفحه بدون حواس‌پرتی'}
+          >
+            {isFullscreen ? (
+              <>
+                <Minimize2 className="w-3.5 h-3.5" />
+                <span>خروج از تمام‌صفحه</span>
+              </>
+            ) : (
+              <>
+                <Maximize2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>تمام‌صفحه ضد اهمال‌کاری (Zen)</span>
+              </>
+            )}
+          </button>
         </div>
+
         <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
           جعبه ابزار کاربردی برای غلبه بر موانع مطالعه
         </h2>
@@ -179,12 +292,20 @@ export const CognitiveToolkit: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 self-end sm:self-auto">
+          <div className="flex flex-wrap items-center gap-3 self-end sm:self-auto">
+            <button
+              onClick={() => setActiveTab('ambient')}
+              className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 font-semibold transition-colors cursor-pointer bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20"
+            >
+              <Trees className="w-3.5 h-3.5" />
+              <span>اصوات طبیعت (باران، جنگل)</span>
+            </button>
+
             <button
               onClick={() => setActiveTab('focus')}
               className="text-xs text-amber-400 hover:text-amber-300 underline font-semibold transition-colors cursor-pointer"
             >
-              تنظیم فرکانس و آهنگ‌ها ←
+              امواج بینورال و لوفای ←
             </button>
 
             {/* Toggle Switch */}
@@ -263,6 +384,17 @@ export const CognitiveToolkit: React.FC = () => {
           {isFocusModeActive && (
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping inline-block" />
           )}
+        </button>
+        <button
+          onClick={() => setActiveTab('ambient')}
+          className={`flex items-center gap-1.5 px-4 py-2 text-xs sm:text-sm font-semibold rounded-lg transition-all whitespace-nowrap cursor-pointer ${
+            activeTab === 'ambient'
+              ? 'bg-emerald-400 text-slate-950 shadow-sm font-bold'
+              : 'text-slate-400 hover:text-emerald-300'
+          }`}
+        >
+          <Trees className="w-3.5 h-3.5" />
+          <span>۶. چشم‌انداز صوتی طبیعت (Ambient Soundscape)</span>
         </button>
       </div>
 
@@ -502,6 +634,14 @@ export const CognitiveToolkit: React.FC = () => {
         <FocusAudioPlayer
           isFocusModeActive={isFocusModeActive}
           onToggleFocusMode={setIsFocusModeActive}
+          onOpenAmbientSoundscape={() => setActiveTab('ambient')}
+        />
+      </div>
+
+      {/* Tool 6: Ambient Soundscape Control Panel */}
+      <div className={activeTab === 'ambient' ? 'block' : 'hidden'}>
+        <AmbientSoundscape
+          onOpenFocusAudio={() => setActiveTab('focus')}
         />
       </div>
     </section>

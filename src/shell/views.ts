@@ -81,6 +81,7 @@ export const VIEWS: ViewMeta[] = [
 /** هر بخش (id در DOM) به کدام صفحه تعلق دارد. */
 export const SECTION_VIEW: Record<string, ViewId> = {
   hero: 'home',
+  'dashboard-hub': 'home',
   problems: 'home',
   'ebbinghaus-scheduler': 'study',
   'adaptive-scheduler': 'study',
