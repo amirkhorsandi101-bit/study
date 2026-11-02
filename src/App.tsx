@@ -460,6 +460,13 @@ export default function App() {
             {/* Sub-tab view render */}
             {gamificationSubTab === 'habits' && <DailyStudyHabitTracker />}
             {gamificationSubTab === 'duels' && (
+              <div role="note" className="max-w-6xl mx-auto px-4 sm:px-6 pt-2">
+                <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200 leading-relaxed">
+                  نمایشی: رقیب‌های این بخش شبیه‌سازی شده‌اند و دانش‌آموز واقعی نیستند. دوئل چندنفرهٔ واقعی بعد از ساخت حساب کاربری اضافه می‌شود.
+                </p>
+              </div>
+            )}
+            {gamificationSubTab === 'duels' && (
               <StudyDuels
                 id="study-duels"
                 onNavigateToScheduler={() => {
