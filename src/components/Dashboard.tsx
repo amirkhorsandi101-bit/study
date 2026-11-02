@@ -151,7 +151,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
     } catch {
       // fallback
     }
-    return 6;
+    return 0;
+  });
+
+  // مباحث نمونه فقط وقتی نشان داده می‌شوند که کاربر هنوز مبحثی ثبت نکرده باشد
+  const [usingSampleTopics, setUsingSampleTopics] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(TOPICS_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return false;
+      }
+    } catch {
+      // fallback
+    }
+    return true;
   });
 
   // Quick 5-min timer launcher state inside dashboard
@@ -176,7 +190,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
         const saved = localStorage.getItem(TOPICS_STORAGE_KEY);
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) setTopics(parsed);
+          if (Array.isArray(parsed)) {
+            setTopics(parsed);
+            setUsingSampleTopics(parsed.length === 0);
+          }
         }
         setIsFocusMode(localStorage.getItem(FOCUS_MODE_KEY) === 'true');
         setPersonalList(getPersonalStudyList());
@@ -414,8 +431,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <span aria-hidden="true">·</span>
               <span className="flex items-center gap-1 text-emerald-400 font-semibold">
                 <Flame className="w-3.5 h-3.5" />
-                <span>زنجیره مطالعه: {streakDays} روز متوالی</span>
+                <span>{streakDays > 0 ? `زنجیره مطالعه: ${streakDays} روز متوالی` : 'زنجیرهٔ مطالعه هنوز شروع نشده'}</span>
               </span>
+              {usingSampleTopics && (
+                <span className="px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-300 font-semibold">
+                  مباحث نمایش‌داده‌شده نمونه‌اند
+                </span>
+              )}
             </div>
 
             <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight leading-snug">
