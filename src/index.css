@@ -37,7 +37,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Print optimization for PDF Certificate generation */
+/* Print optimization for PDF Certificate & Study Schedule generation */
 @media print {
   @page {
     size: A4 landscape;
@@ -54,7 +54,9 @@
   }
 
   #printable-certificate,
-  #printable-certificate * {
+  #printable-certificate *,
+  #printable-study-planner,
+  #printable-study-planner * {
     visibility: visible;
   }
 
@@ -77,4 +79,43 @@
     print-color-adjust: exact;
     z-index: 9999999;
   }
+
+  #printable-study-planner {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 14px !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    z-index: 9999999 !important;
+    visibility: visible !important;
+  }
+
+  #printable-study-planner table {
+    page-break-inside: auto;
+  }
+
+  #printable-study-planner tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
 }
+
+/* Off-screen placement during interactive screen view so html2canvas can measure without covering UI */
+@media screen {
+  #printable-study-planner {
+    position: fixed;
+    top: -99999px;
+    left: -99999px;
+    z-index: -9999;
+    pointer-events: none;
+  }
+}
+

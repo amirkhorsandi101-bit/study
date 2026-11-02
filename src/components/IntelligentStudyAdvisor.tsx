@@ -28,7 +28,8 @@ import {
   Filter,
   BarChart2,
   Moon,
-  BellOff
+  BellOff,
+  BookmarkCheck
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -48,9 +49,16 @@ import {
   EbbinghausReviewStats,
   EBBINGHAUS_INTERVALS
 } from './EbbinghausScheduler';
+import {
+  PersonalStudyTopic,
+  getPersonalStudyList,
+  matchesPersonalStudyList,
+  PERSONAL_LIST_UPDATED_EVENT
+} from '../data/personalStudyList';
 
 export const TOPICS_STORAGE_KEY = 'rahbord_ebbinghaus_topics_queue';
 export const REVIEW_STATS_STORAGE_KEY = 'rahbord_ebbinghaus_review_stats';
+
 
 export interface TopicAdvisorAnalysis {
   topic: EbbinghausTopicItem;
@@ -109,6 +117,10 @@ export const IntelligentStudyAdvisor: React.FC<IntelligentStudyAdvisorProps> = (
   // Action status / toast
   const [appliedToast, setAppliedToast] = useState<string | null>(null);
 
+  // Personal study list filtering
+  const [onlyPersonalList, setOnlyPersonalList] = useState<boolean>(false);
+  const [personalList, setPersonalList] = useState<PersonalStudyTopic[]>(() => getPersonalStudyList());
+
   // Listen to cross-component data changes
   useEffect(() => {
     const handleUpdate = () => {
@@ -117,12 +129,20 @@ export const IntelligentStudyAdvisor: React.FC<IntelligentStudyAdvisorProps> = (
         if (raw) setTopics(JSON.parse(raw));
         const rawStats = localStorage.getItem(REVIEW_STATS_STORAGE_KEY);
         if (rawStats) setReviewStats(JSON.parse(rawStats));
+        setPersonalList(getPersonalStudyList());
       } catch {}
     };
 
     window.addEventListener('storage', handleUpdate);
-    return () => window.removeEventListener('storage', handleUpdate);
+    window.addEventListener('rahbord_data_updated', handleUpdate);
+    window.addEventListener(PERSONAL_LIST_UPDATED_EVENT, handleUpdate);
+    return () => {
+      window.removeEventListener('storage', handleUpdate);
+      window.removeEventListener('rahbord_data_updated', handleUpdate);
+      window.removeEventListener(PERSONAL_LIST_UPDATED_EVENT, handleUpdate);
+    };
   }, []);
+
 
   // Scientific Retrievability & Decay Calculation Engine (Ebbinghaus Formula R = e^(-t/S))
   const analyzedTopics = useMemo<TopicAdvisorAnalysis[]>(() => {
@@ -231,8 +251,13 @@ export const IntelligentStudyAdvisor: React.FC<IntelligentStudyAdvisorProps> = (
 
   // Sort topics by urgency score descending (Advisor's Optimized Order)
   const sortedByPriority = useMemo(() => {
-    return [...analyzedTopics].sort((a, b) => b.urgencyScore - a.urgencyScore);
-  }, [analyzedTopics]);
+    let list = [...analyzedTopics];
+    if (onlyPersonalList) {
+      list = list.filter(item => matchesPersonalStudyList(item.topic, personalList));
+    }
+    return list.sort((a, b) => b.urgencyScore - a.urgencyScore);
+  }, [analyzedTopics, onlyPersonalList, personalList]);
+
 
   // Default selected topic for curve
   useEffect(() => {
@@ -449,7 +474,27 @@ export const IntelligentStudyAdvisor: React.FC<IntelligentStudyAdvisorProps> = (
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setOnlyPersonalList(!onlyPersonalList)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border ${
+                  onlyPersonalList
+                    ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-md shadow-amber-400/20'
+                    : 'bg-slate-950 border-slate-800 text-slate-300 hover:text-white hover:border-slate-700'
+                }`}
+                title="محدود کردن تحلیل مشاور به مباحث انتخابی شما در لیست شخصی"
+              >
+                <BookmarkCheck className={`w-3.5 h-3.5 ${onlyPersonalList ? 'text-slate-950' : 'text-amber-400'}`} />
+                <span>فقط مباحث لیست شخصی</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
+                  onlyPersonalList ? 'bg-slate-950/20 text-slate-950' : 'bg-amber-400/10 text-amber-300'
+                }`}>
+                  {personalList.length}
+                </span>
+              </button>
+
+              <div className="h-4 w-px bg-slate-800 mx-1 hidden sm:block" />
+
               {[20, 30, 45, 60, 90].map(mins => (
                 <button
                   key={mins}
@@ -464,6 +509,7 @@ export const IntelligentStudyAdvisor: React.FC<IntelligentStudyAdvisorProps> = (
                 </button>
               ))}
             </div>
+
           </div>
 
           {/* Allocation Outcome Summary */}

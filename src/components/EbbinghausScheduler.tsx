@@ -45,7 +45,8 @@ import {
   Pause,
   ShieldAlert,
   FileText,
-  Zap
+  Zap,
+  BookOpen
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -61,6 +62,18 @@ import {
   Cell
 } from 'recharts';
 import { EbbinghausTopicItem } from './DashboardStats';
+import { CurriculumBrowserModal } from './CurriculumBrowserModal';
+import { CurriculumTopic } from '../data/curriculumData';
+import {
+  PersonalStudyTopic,
+  getPersonalStudyList,
+  matchesPersonalStudyList,
+  syncPersonalTopicsToEbbinghaus,
+  PERSONAL_LIST_UPDATED_EVENT
+} from '../data/personalStudyList';
+import { SubjectSelector } from './SubjectSelector';
+
+
 
 const TOPICS_STORAGE_KEY = 'rahbord_ebbinghaus_topics_queue';
 const NOTIF_SETTINGS_KEY = 'rahbord_ebbinghaus_notification_settings';
@@ -178,15 +191,24 @@ export const CYCLE_DESCRIPTIONS = [
 
 export const SUBJECT_OPTIONS = [
   'زیست‌شناسی',
-  'ریاضی و حسابان',
   'شیمی',
   'فیزیک',
+  'ریاضیات',
+  'حسابان',
+  'هندسه',
+  'آمار و احتمال',
+  'ریاضیات گسسته',
+  'علوم و فنون ادبی',
+  'فلسفه',
+  'منطق',
+  'روان‌شناسی',
+  'اقتصاد',
+  'جامعه‌شناسی',
   'ادبیات و علوم انسانی',
+  'عربی',
   'دین و زندگی',
   'زبان انگلیسی',
-  'عربی',
-  'زمین‌شناسی',
-  'عمومی و مهارتی'
+  'زمین‌شناسی'
 ];
 
 export const RETRIEVAL_METHODS = [
@@ -351,9 +373,20 @@ export const EbbinghausScheduler: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'due_today' | 'upcoming' | 'mastered' | 'all'>('due_today');
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [onlyPersonalStudyList, setOnlyPersonalStudyList] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('rahbord_ebbinghaus_filter_personal_only') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [personalList, setPersonalList] = useState<PersonalStudyTopic[]>(() => getPersonalStudyList());
   
   // Modals & Panels
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
+  const [showCurriculumModal, setShowCurriculumModal] = useState<boolean>(false);
+  const [showPersonalListModal, setShowPersonalListModal] = useState<boolean>(false);
+
   const [showSettingsDrawer, setShowSettingsDrawer] = useState<boolean>(false);
   const [showExportCSVModal, setShowExportCSVModal] = useState<boolean>(false);
   const [csvExportScope, setCsvExportScope] = useState<'all' | 'due' | 'active' | 'mastered'>('all');
@@ -634,14 +667,28 @@ export const EbbinghausScheduler: React.FC = () => {
             setReviewStats(parsedReviews);
           }
         }
+        const pList = getPersonalStudyList();
+        setPersonalList(pList);
+        const filterPref = localStorage.getItem('rahbord_ebbinghaus_filter_personal_only');
+        if (filterPref !== null) {
+          setOnlyPersonalStudyList(filterPref === 'true');
+        }
       } catch (e) {
         console.error('Failed to sync on data update event:', e);
       }
     };
 
+
     window.addEventListener('rahbord_data_updated', handleDataUpdated);
-    return () => window.removeEventListener('rahbord_data_updated', handleDataUpdated);
+    window.addEventListener(PERSONAL_LIST_UPDATED_EVENT, handleDataUpdated);
+    window.addEventListener('rahbord_ebbinghaus_filter_changed', handleDataUpdated);
+    return () => {
+      window.removeEventListener('rahbord_data_updated', handleDataUpdated);
+      window.removeEventListener(PERSONAL_LIST_UPDATED_EVENT, handleDataUpdated);
+      window.removeEventListener('rahbord_ebbinghaus_filter_changed', handleDataUpdated);
+    };
   }, []);
+
 
   // Persist topics to LocalStorage
   const saveTopics = (newTopics: EbbinghausTopicItem[]) => {
@@ -766,6 +813,11 @@ export const EbbinghausScheduler: React.FC = () => {
       // Subject filter
       if (selectedSubjectFilter !== 'all' && item.subject !== selectedSubjectFilter) return false;
 
+      // Personal study list filter
+      if (onlyPersonalStudyList && !matchesPersonalStudyList(item, personalList)) {
+        return false;
+      }
+
       // Search query
       if (searchQuery.trim() !== '') {
         const q = searchQuery.toLowerCase();
@@ -777,7 +829,8 @@ export const EbbinghausScheduler: React.FC = () => {
 
       return true;
     });
-  }, [analyzedTopics, activeTab, selectedSubjectFilter, searchQuery]);
+  }, [analyzedTopics, activeTab, selectedSubjectFilter, searchQuery, onlyPersonalStudyList, personalList]);
+
 
   // Request browser Notification permission
   const handleRequestPermission = async () => {
@@ -1205,6 +1258,25 @@ export const EbbinghausScheduler: React.FC = () => {
     showToast('مبحث جدید اضافه شد', `مبحث «${newItem.topicName}» به جدول زمان‌بندی ابینگهاوس افزوده شد.`, 'success');
   };
 
+  // Add topic selected from official Iranian curriculum catalog
+  const handleAddFromCurriculum = (curriculumTopic: CurriculumTopic, studyDaysAgo: number) => {
+    const newItem: EbbinghausTopicItem = {
+      id: 'curriculum_' + curriculumTopic.id + '_' + Date.now(),
+      subject: curriculumTopic.subject,
+      topicName: `${curriculumTopic.bookTitle}: ${curriculumTopic.topicName}`,
+      lastReviewedDaysAgo: studyDaysAgo,
+      currentCycle: 0,
+      recommendedMethod: curriculumTopic.suggestedMethod
+    };
+
+    saveTopics([newItem, ...topics]);
+    showToast(
+      'سرفصل رسمی کتب درسی ثبت شد',
+      `مبحث «${curriculumTopic.topicName}» از ${curriculumTopic.bookTitle} به جدول زمان‌بندی مرور ابینگهاوس افزوده شد.`,
+      'success'
+    );
+  };
+
   // Generate and download .ICS calendar file for Google Calendar / Apple Calendar
   const handleExportICalendar = () => {
     const now = new Date();
@@ -1543,6 +1615,16 @@ export const EbbinghausScheduler: React.FC = () => {
                   <span>تمام‌صفحه (Zen)</span>
                 </>
               )}
+            </button>
+
+            {/* Official Curriculum Browser Button */}
+            <button
+              onClick={() => setShowCurriculumModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 text-amber-300 transition-all cursor-pointer shadow-sm"
+              title="فهرست رسمی سرفصل‌های دهم، یازدهم و دوازدهم (تجربی، ریاضی، انسانی)"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+              <span>سرفصل کتب درسی (۱۰، ۱۱، ۱۲)</span>
             </button>
 
             <button
@@ -2396,6 +2478,7 @@ export const EbbinghausScheduler: React.FC = () => {
           </div>
 
           {/* Subject Filter */}
+          {/* Subject Filter */}
           <select
             value={selectedSubjectFilter}
             onChange={(e) => setSelectedSubjectFilter(e.target.value)}
@@ -2406,6 +2489,40 @@ export const EbbinghausScheduler: React.FC = () => {
               <option key={sub} value={sub}>{sub}</option>
             ))}
           </select>
+
+          {/* Personal Study List Filter Button */}
+          <button
+            onClick={() => {
+              const next = !onlyPersonalStudyList;
+              setOnlyPersonalStudyList(next);
+              try {
+                localStorage.setItem('rahbord_ebbinghaus_filter_personal_only', String(next));
+              } catch (e) {}
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer whitespace-nowrap ${
+              onlyPersonalStudyList
+                ? 'bg-amber-400 text-slate-950 border-amber-300 font-bold shadow-sm shadow-amber-400/20'
+                : 'bg-slate-900 border-slate-800 text-slate-300 hover:text-white hover:border-slate-700'
+            }`}
+            title="فیلتر بر اساس مباحث لیست مطالعه شخصی (SubjectLibrary)"
+          >
+            <BookmarkCheck className={`w-3.5 h-3.5 ${onlyPersonalStudyList ? 'text-slate-950' : 'text-amber-400'}`} />
+            <span>فقط لیست شخصی</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
+              onlyPersonalStudyList ? 'bg-slate-950/20 text-slate-950 font-bold' : 'bg-amber-400/10 text-amber-300'
+            }`}>
+              {personalList.length}
+            </span>
+          </button>
+
+          {/* Manage Personal List Modal trigger */}
+          <button
+            onClick={() => setShowPersonalListModal(true)}
+            className="p-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-amber-300 hover:border-amber-400/30 transition-colors cursor-pointer"
+            title="مدیریت و انتخاب مباحث از کتابخانه کتب درسی (SubjectLibrary)"
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
 
@@ -2416,31 +2533,56 @@ export const EbbinghausScheduler: React.FC = () => {
             <CheckCircle2 className="w-6 h-6 text-emerald-400" />
           </div>
           <h4 className="text-base font-bold text-white mb-1">
-            {activeTab === 'due_today'
+            {onlyPersonalStudyList
+              ? 'مبحثی از لیست مطالعه شخصی شما در این نما یافت نشد.'
+              : activeTab === 'due_today'
               ? 'هیچ مبحثی برای مرور امروز باقی نمانده است!'
               : 'موردی با این فیلتر یافت نشد.'}
           </h4>
           <p className="text-xs text-slate-400 max-w-md mx-auto mb-5">
-            {activeTab === 'due_today'
+            {onlyPersonalStudyList
+              ? 'می‌توانید مباحث لیست شخصی خود را با یک کلیک به صف مرور ابینگهاوس منتقل کنید یا فیلتر را غیرفعال نمایید.'
+              : activeTab === 'due_today'
               ? 'آفرین! تمام برنامه‌های بازیابی امروز را به اتمام رسانده‌اید یا مبحث جدیدی هنوز موعدش نرسیده است.'
               : 'می‌توانید فیلترها را تغییر دهید یا مبحث جدیدی به چرخه اضافه نمایید.'}
           </p>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg bg-amber-400 text-slate-950 hover:bg-amber-300 transition-colors cursor-pointer shadow-sm shadow-amber-500/20"
-          >
-            <Plus className="w-4 h-4" />
-            <span>افزودن مبحث جدید به برنامه ابینگهاوس</span>
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {onlyPersonalStudyList && personalList.length > 0 && (
+              <button
+                onClick={() => {
+                  const res = syncPersonalTopicsToEbbinghaus();
+                  if (res.addedCount > 0) {
+                    showToast('همگام‌سازی موفق', `${res.addedCount} مبحث از لیست شخصی به صف مرور اضافه شدند.`, 'success');
+                  } else {
+                    showToast('اطلاع', 'همه مباحث در صف مرور موجود هستند.', 'info');
+                  }
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg bg-emerald-500 text-slate-950 hover:bg-emerald-400 transition-colors cursor-pointer shadow-sm"
+              >
+                <Check className="w-4 h-4" />
+                <span>انتقال مباحث لیست شخصی به صف ابینگهاوس</span>
+              </button>
+            )}
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg bg-amber-400 text-slate-950 hover:bg-amber-300 transition-colors cursor-pointer shadow-sm shadow-amber-500/20"
+            >
+              <Plus className="w-4 h-4" />
+              <span>افزودن مبحث جدید به برنامه ابینگهاوس</span>
+            </button>
+          </div>
         </div>
       ) : (
         <div className="space-y-4">
           {filteredTopics.map(item => {
             const sched = item.schedule;
+            const isFromPersonalList = matchesPersonalStudyList(item, personalList);
+
             return (
               <div
                 key={item.id}
-                className={`p-5 rounded-2xl border transition-all duration-200 ${
+                id={`ebbinghaus-topic-${item.id}`}
+                className={`p-5 rounded-2xl border transition-all duration-300 scroll-mt-28 ${
                   sched.isDueToday
                     ? 'bg-rose-950/10 border-rose-500/40 hover:border-rose-500/70 shadow-lg shadow-rose-950/20'
                     : sched.isMastered
@@ -2455,6 +2597,14 @@ export const EbbinghausScheduler: React.FC = () => {
                       <span className="text-xs px-2.5 py-0.5 rounded-md font-semibold bg-slate-800 text-amber-300 border border-slate-700/80">
                         {item.subject}
                       </span>
+
+                      {isFromPersonalList && (
+                        <span className="text-[11px] text-amber-400 font-bold flex items-center gap-1 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-md">
+                          <BookmarkCheck className="w-3.5 h-3.5 text-amber-400" />
+                          <span>لیست شخصی</span>
+                        </span>
+                      )}
+
 
                       <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 ${
                         sched.isDueToday
@@ -2649,6 +2799,30 @@ export const EbbinghausScheduler: React.FC = () => {
                 className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Direct Curriculum Picker Shortcut */}
+            <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-slate-900 to-amber-500/5 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                  <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                  <span>انتخاب سریع از سرفصل‌های رسمی آموزش و پرورش:</span>
+                </span>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  فهرست کتب پایه‌های دهم، یازدهم و دوازدهم برای رشته‌های تجربی، ریاضی و انسانی
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddModal(false);
+                  setShowCurriculumModal(true);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-amber-400/20 active:scale-95 shrink-0"
+              >
+                <span>انتخاب از فهرست کتب</span>
+                <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
 
@@ -3117,6 +3291,24 @@ export const EbbinghausScheduler: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Official Iranian Curriculum Browser Modal */}
+      <CurriculumBrowserModal
+        isOpen={showCurriculumModal}
+        onClose={() => setShowCurriculumModal(false)}
+        onAddTopicToScheduler={handleAddFromCurriculum}
+      />
+
+      {/* SubjectSelector Modal / Sidebar Component powered by SubjectLibrary */}
+      <SubjectSelector
+        isOpen={showPersonalListModal}
+        onClose={() => setShowPersonalListModal(false)}
+        onSyncToScheduler={(addedCount) => {
+          showToast('همگام‌سازی موفق', `${addedCount} مبحث از لیست شخصی شما به صف مرور اضافه شدند.`, 'success');
+        }}
+      />
     </section>
   );
 };
+
+

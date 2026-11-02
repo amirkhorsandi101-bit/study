@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+
 import {
   Clock,
   Compass,
@@ -21,10 +22,35 @@ import {
   Zap,
   ShieldCheck,
   Check,
-  Maximize2
+  Maximize2,
+  BookmarkCheck,
+  BookmarkPlus,
+  BookOpen,
+  ListPlus,
+  X,
+  GraduationCap,
+  CheckSquare,
+  FolderCheck,
+  ChevronDown,
+  ChevronUp,
+  Calendar
 } from 'lucide-react';
+
+
 import { EbbinghausTopicItem } from './DashboardStats';
 import { EBBINGHAUS_INTERVALS } from './EbbinghausScheduler';
+import { DashboardQuickSearch } from './DashboardQuickSearch';
+import { SubjectSelector } from './SubjectSelector';
+import { SubjectSelectorModal } from './SubjectSelectorModal';
+import {
+  PersonalStudyTopic,
+  getPersonalStudyList,
+  syncPersonalTopicsToEbbinghaus,
+  removeTopicFromPersonalList,
+  PERSONAL_LIST_UPDATED_EVENT
+} from '../data/personalStudyList';
+
+
 
 interface DashboardProps {
   id?: string;
@@ -133,7 +159,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isQuickTimerRunning, setIsQuickTimerRunning] = useState<boolean>(false);
   const [quickTimerFinished, setQuickTimerFinished] = useState<boolean>(false);
 
-  // Sync topics when local storage changes or window gains focus
+  // Personal Study List state
+  const [personalList, setPersonalList] = useState<PersonalStudyTopic[]>(() => getPersonalStudyList());
+  const [isPersonalListModalOpen, setIsPersonalListModalOpen] = useState<boolean>(false);
+  const [dashboardToast, setDashboardToast] = useState<string | null>(null);
+
+  const showDashboardToast = (msg: string) => {
+    setDashboardToast(msg);
+    setTimeout(() => setDashboardToast(null), 3000);
+  };
+
+  // Sync topics and personal study list when local storage changes or window gains focus
   useEffect(() => {
     const reloadData = () => {
       try {
@@ -143,6 +179,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           if (Array.isArray(parsed)) setTopics(parsed);
         }
         setIsFocusMode(localStorage.getItem(FOCUS_MODE_KEY) === 'true');
+        setPersonalList(getPersonalStudyList());
       } catch (e) {
         console.error(e);
       }
@@ -150,11 +187,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     window.addEventListener('focus', reloadData);
     window.addEventListener('rahbord_study_focus_mode_changed', reloadData);
+    window.addEventListener(PERSONAL_LIST_UPDATED_EVENT, reloadData);
+    window.addEventListener('rahbord_data_updated', reloadData);
     return () => {
       window.removeEventListener('focus', reloadData);
       window.removeEventListener('rahbord_study_focus_mode_changed', reloadData);
+      window.removeEventListener(PERSONAL_LIST_UPDATED_EVENT, reloadData);
+      window.removeEventListener('rahbord_data_updated', reloadData);
     };
   }, []);
+
 
   // Quick 5-minute counter effect
   useEffect(() => {
@@ -221,6 +263,107 @@ export const Dashboard: React.FC<DashboardProps> = ({
     onNavigate(sectionId);
   };
 
+  interface SubjectSummaryItem {
+    subject: string;
+    topicsCount: number;
+    criticalCount: number;
+    books: Set<string>;
+    topics: PersonalStudyTopic[];
+  }
+
+  // Group selected topics by subject for the Selected Topics Summary Widget
+  const selectedSubjectsSummary = useMemo<SubjectSummaryItem[]>(() => {
+    const map = new Map<string, SubjectSummaryItem>();
+
+
+    personalList.forEach(item => {
+      const sub = item.subject || 'عمومی';
+      if (!map.has(sub)) {
+        map.set(sub, {
+          subject: sub,
+          topicsCount: 0,
+          criticalCount: 0,
+          books: new Set(),
+          topics: []
+        });
+      }
+      const entry = map.get(sub)!;
+      entry.topicsCount++;
+      if (item.importance === 'critical' || item.importance === 'very_high') {
+        entry.criticalCount++;
+      }
+      entry.books.add(item.bookTitle);
+      entry.topics.push(item);
+    });
+
+    return Array.from(map.values()).sort((a, b) => b.topicsCount - a.topicsCount);
+  }, [personalList]);
+
+  // Active subject filter and card expansion state for Selected Topics Summary Widget
+  const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all');
+  const [expandedCardSubject, setExpandedCardSubject] = useState<string | null>(null);
+
+  const displayedSubjectsSummary = useMemo(() => {
+    if (selectedSubjectFilter === 'all') return selectedSubjectsSummary;
+    return selectedSubjectsSummary.filter(s => s.subject === selectedSubjectFilter);
+  }, [selectedSubjectsSummary, selectedSubjectFilter]);
+
+  const totalCriticalTopics = useMemo(() => {
+    return personalList.filter(t => t.importance === 'critical' || t.importance === 'very_high').length;
+  }, [personalList]);
+
+  const scheduledInEbbinghausCount = useMemo(() => {
+    return personalList.filter(t => t.status === 'scheduled_ebbinghaus').length;
+  }, [personalList]);
+
+  // Color theme mapper for subjects to highlight them attractively
+  const getSubjectColorTheme = (subjectName: string) => {
+    if (subjectName.includes('زیست')) {
+      return {
+        badgeBg: 'bg-emerald-500/10',
+        badgeBorder: 'border-emerald-500/30',
+        badgeText: 'text-emerald-400',
+        cardBorder: 'hover:border-emerald-500/40',
+        accent: 'text-emerald-400'
+      };
+    }
+    if (subjectName.includes('شیمی')) {
+      return {
+        badgeBg: 'bg-amber-500/10',
+        badgeBorder: 'border-amber-500/30',
+        badgeText: 'text-amber-400',
+        cardBorder: 'hover:border-amber-500/40',
+        accent: 'text-amber-400'
+      };
+    }
+    if (subjectName.includes('فیزیک')) {
+      return {
+        badgeBg: 'bg-cyan-500/10',
+        badgeBorder: 'border-cyan-500/30',
+        badgeText: 'text-cyan-400',
+        cardBorder: 'hover:border-cyan-500/40',
+        accent: 'text-cyan-400'
+      };
+    }
+    if (subjectName.includes('ریاضی') || subjectName.includes('حسابان') || subjectName.includes('هندسه') || subjectName.includes('گسسته')) {
+      return {
+        badgeBg: 'bg-purple-500/10',
+        badgeBorder: 'border-purple-500/30',
+        badgeText: 'text-purple-400',
+        cardBorder: 'hover:border-purple-500/40',
+        accent: 'text-purple-400'
+      };
+    }
+    return {
+      badgeBg: 'bg-rose-500/10',
+      badgeBorder: 'border-rose-500/30',
+      badgeText: 'text-rose-400',
+      cardBorder: 'hover:border-rose-500/40',
+      accent: 'text-rose-400'
+    };
+  };
+
+
   return (
     <section id={id} className="py-12 px-6 max-w-6xl mx-auto border-b border-slate-800/80">
       {/* Editorial Kicker & Mode Toggle */}
@@ -284,22 +427,396 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </p>
           </div>
 
-          {/* Quick Focus Mode Pill Toggle */}
+          {/* Quick Actions: SubjectSelector & Focus Mode */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+            {/* DEDICATED TRIGGER BUTTON FOR SUBJECT SELECTOR */}
+            <button
+              onClick={() => setIsPersonalListModalOpen(true)}
+              className="flex items-center justify-center gap-2.5 px-4 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs transition-all cursor-pointer shadow-md shadow-amber-400/20 active:scale-95"
+              title="باز کردن پنجره انتخاب سرفصل‌های درسی (SubjectSelector)"
+            >
+              <GraduationCap className="w-4 h-4 text-slate-950" />
+              <span>انتخاب سرفصل‌ها (SubjectSelector)</span>
+              <span className="bg-slate-950/20 text-slate-950 font-mono px-2 py-0.5 rounded-lg text-[10px]">
+                {personalList.length} مبحث
+              </span>
+            </button>
+
             <button
               onClick={handleToggleFocusMode}
               className={`flex items-center justify-center gap-2.5 px-4 py-3 rounded-xl border font-semibold text-xs transition-all cursor-pointer shadow-sm active:scale-95 ${
                 isFocusMode
-                  ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-amber-400/20'
+                  ? 'bg-amber-400/10 text-amber-300 border-amber-400/30'
                   : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 border-slate-700'
               }`}
             >
-              <Headphones className={`w-4 h-4 ${isFocusMode ? 'animate-pulse' : ''}`} />
-              <span>{isFocusMode ? 'حالت تمرکز عمیق (فعال)' : 'فعال‌سازی حالت تمرکز عمیق'}</span>
+              <Headphones className={`w-4 h-4 ${isFocusMode ? 'animate-pulse text-amber-400' : ''}`} />
+              <span>{isFocusMode ? 'حالت تمرکز عمیق (فعال)' : 'فعال‌سازی حالت تمرکز'}</span>
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      {/* Quick Search Bar Component for Topics & Scheduled Reviews */}
+      <DashboardQuickSearch
+        topics={topics}
+        onNavigate={onNavigate}
+        onSelectTopic={(topic, action) => {
+          if (onSelectTool) {
+            if (action === 'review') onSelectTool('ebbinghaus-scheduler');
+            else if (action === 'focus') onSelectTool('toolkit');
+            else if (action === 'advisor') onSelectTool('study-advisor');
+          }
+        }}
+        onAddCurriculumTopic={(cTopic, studyDaysAgo) => {
+          const newItem: EbbinghausTopicItem = {
+            id: 'curriculum_' + cTopic.id + '_' + Date.now(),
+            subject: cTopic.subject,
+            topicName: `${cTopic.bookTitle}: ${cTopic.topicName}`,
+            lastReviewedDaysAgo: studyDaysAgo,
+            currentCycle: 0,
+            recommendedMethod: cTopic.suggestedMethod
+          };
+          const updated = [newItem, ...topics];
+          setTopics(updated);
+          try {
+            localStorage.setItem(TOPICS_STORAGE_KEY, JSON.stringify(updated));
+            window.dispatchEvent(new Event('rahbord_data_updated'));
+          } catch (e) {
+            console.error(e);
+          }
+        }}
+      />
+
+      {/* =========================================================================
+          SELECTED TOPICS SUMMARY WIDGET (ویجت خلاصه مباحث و دروس منتخب دانش‌آموز)
+         ========================================================================= */}
+      <div className="mb-8 rounded-2xl bg-gradient-to-b from-slate-900/95 via-slate-900/80 to-slate-950 border border-slate-800 p-5 sm:p-7 shadow-xl relative overflow-hidden">
+        {/* Glow Effects */}
+        <div className="absolute top-0 right-0 w-80 h-80 bg-amber-500/[0.04] rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-80 h-80 bg-cyan-500/[0.04] rounded-full blur-3xl pointer-events-none" />
+
+        {/* Widget Header & Primary Actions */}
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-slate-800/80">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center text-amber-400 shrink-0 shadow-inner">
+              <GraduationCap className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 text-xs text-amber-400 font-semibold tracking-wide">
+                <span>ویجت خلاصه سرفصل‌های دانش‌آموز</span>
+                <span aria-hidden="true">·</span>
+                <span className="text-slate-400">SubjectLibrary</span>
+              </div>
+              <h2 className="text-lg sm:text-xl font-black text-white mt-0.5 flex items-center gap-2.5">
+                <span>مباحث منتخب</span>
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-400/15 border border-amber-400/30 text-amber-300 font-bold font-mono">
+                  {personalList.length} مبحث
+                </span>
+              </h2>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* DEDICATED BUTTON TO TRIGGER SUBJECT SELECTOR MODAL */}
+            <button
+              onClick={() => setIsPersonalListModalOpen(true)}
+              className="py-2.5 px-4 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs rounded-xl flex items-center gap-2 transition-all cursor-pointer shadow-md shadow-amber-400/20 active:scale-95"
+              title="باز کردن مودال انتخاب سرفصل‌های درسی (SubjectSelector)"
+            >
+              <GraduationCap className="w-4 h-4 text-slate-950" />
+              <span>باز کردن SubjectSelector</span>
+            </button>
+
+            {/* DEDICATED BUTTON TO OPEN STUDY PLANNER */}
+            <button
+              onClick={() => onNavigate('study-planner')}
+              className="py-2.5 px-3.5 bg-slate-800 hover:bg-slate-750 border border-slate-700/80 text-slate-200 hover:text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
+            >
+              <Calendar className="w-4 h-4 text-amber-400" />
+              <span>پلنر درسی جامع</span>
+            </button>
+
+            {personalList.length > 0 && (
+              <button
+                onClick={() => {
+                  const res = syncPersonalTopicsToEbbinghaus();
+                  if (res.addedCount > 0) {
+                    showDashboardToast(`${res.addedCount} مبحث به صف مرور ابینگهاوس منتقل شد.`);
+                  } else {
+                    showDashboardToast('تمام مباحث لیست شخصی شما در صف مرور ثبت شده‌اند.');
+                  }
+                }}
+                className="py-2.5 px-3.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-semibold text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
+                title="افزودن خودکار به فواصل مرور ابینگهاوس"
+              >
+                <Check className="w-4 h-4" />
+                <span>انتقال به صف ابینگهاوس</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => {
+                handleLaunchTool('ebbinghaus-scheduler');
+                try {
+                  localStorage.setItem('rahbord_ebbinghaus_filter_personal_only', 'true');
+                  window.dispatchEvent(new Event('rahbord_ebbinghaus_filter_changed'));
+                } catch (e) {}
+              }}
+              className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 font-medium text-xs rounded-xl flex items-center gap-1.5 transition-all cursor-pointer"
+            >
+              <span>مشاهده در جدول مرور</span>
+              <ArrowLeft className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
+
+        {/* Selected Topics Summary Content */}
+        {personalList.length === 0 ? (
+          /* Empty state */
+          <div className="relative z-10 py-10 px-4 text-center max-w-lg mx-auto space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center mx-auto text-amber-400">
+              <FolderCheck className="w-7 h-7" />
+            </div>
+            <div className="space-y-1.5">
+              <h3 className="text-sm font-bold text-white">
+                هنوز مبحثی برای برنامه مطالعاتی خود انتخاب نکرده‌اید!
+              </h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                با استفاده از ابزار <strong className="text-amber-300">SubjectSelector</strong> می‌توانید کتاب‌ها، فصول و مباحث دروس پایه دهم، یازدهم و دوازدهم رشته‌های تجربی، ریاضی و انسانی را علامت زده و به لیست شخصی خود اضافه کنید.
+              </p>
+            </div>
+            <button
+              onClick={() => setIsPersonalListModalOpen(true)}
+              className="px-5 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-amber-400/20 transition-all cursor-pointer inline-flex items-center gap-2"
+            >
+              <CheckSquare className="w-4 h-4" />
+              <span>باز کردن انتخاب‌گر سرفصل‌ها (SubjectSelector)</span>
+            </button>
+          </div>
+        ) : (
+          /* Populated State with Highlights by Subject */
+          <div className="relative z-10 pt-5 space-y-5">
+            {/* Quick Unboxed Stats Row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-3 space-y-1">
+                <span className="text-[11px] text-slate-400">کل مباحث منتخب:</span>
+                <div className="font-bold text-white text-base font-mono">
+                  {personalList.length} <span className="text-xs font-normal text-slate-400">مبحث</span>
+                </div>
+              </div>
+
+              <div className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-3 space-y-1">
+                <span className="text-[11px] text-slate-400">دروس پوشش‌داده‌شده:</span>
+                <div className="font-bold text-amber-300 text-base font-mono">
+                  {selectedSubjectsSummary.length} <span className="text-xs font-normal text-slate-400">درس مجزا</span>
+                </div>
+              </div>
+
+              <div className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-3 space-y-1">
+                <span className="text-[11px] text-slate-400">مباحث پرریسک و حیاتی:</span>
+                <div className="font-bold text-rose-400 text-base font-mono">
+                  {totalCriticalTopics} <span className="text-xs font-normal text-slate-400">مبحث کنکوری</span>
+                </div>
+              </div>
+
+              <div className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-3 space-y-1">
+                <span className="text-[11px] text-slate-400">ثبت در صف مرور ابینگهاوس:</span>
+                <div className="font-bold text-emerald-400 text-base font-mono">
+                  {scheduledInEbbinghausCount} از {personalList.length} <span className="text-xs font-normal text-slate-400">مبحث</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Smart Recommender Callout Bar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-xl bg-gradient-to-l from-amber-400/10 via-slate-900/90 to-slate-900 border border-amber-400/20 text-xs">
+              <div className="flex items-center gap-2 text-slate-300">
+                <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>
+                  موتور پیشنهاددهنده هوشمند فعال است: پیشنهاد سرفصل‌های مکمل بر اساس پیوند بین‌رشته‌ای، نتایج کوییز و فواصل فراموشی ابینگهاوس.
+                </span>
+              </div>
+              <button
+                onClick={() => setIsPersonalListModalOpen(true)}
+                className="text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 cursor-pointer shrink-0 transition-colors self-end sm:self-auto"
+              >
+                <span>مشاهده سرفصل‌های پیشنهادی</span>
+                <ArrowLeft className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Subject Highlights Grid (کارت‌های تفکیکی دروس انتخاب‌شده) */}
+            <div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 text-xs">
+                <span className="font-bold text-slate-200 flex items-center gap-1.5">
+                  <BookOpen className="w-4 h-4 text-amber-400" />
+                  <span>تفکیک دروس منتخب دانش‌آموز:</span>
+                </span>
+                <button
+                  onClick={() => setIsPersonalListModalOpen(true)}
+                  className="text-amber-400 hover:text-amber-300 font-semibold cursor-pointer text-xs flex items-center gap-1.5"
+                >
+                  <BookmarkPlus className="w-3.5 h-3.5" />
+                  <span>مدیریت مباحث با SubjectSelector</span>
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Subject Filter Chips Bar */}
+              {selectedSubjectsSummary.length > 1 && (
+                <div className="flex flex-wrap items-center gap-1.5 mb-4 pb-2 border-b border-slate-800/60">
+                  <span className="text-[11px] text-slate-400 ml-1">فیلتر درس:</span>
+                  <button
+                    onClick={() => setSelectedSubjectFilter('all')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                      selectedSubjectFilter === 'all'
+                        ? 'bg-amber-400 text-slate-950 font-bold shadow-sm'
+                        : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    همه دروس ({personalList.length})
+                  </button>
+                  {selectedSubjectsSummary.map((s: SubjectSummaryItem) => {
+                    const isSelected = selectedSubjectFilter === s.subject;
+                    return (
+                      <button
+                        key={s.subject}
+                        onClick={() => setSelectedSubjectFilter(isSelected ? 'all' : s.subject)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
+                          isSelected
+                            ? 'bg-amber-400 text-slate-950 font-bold shadow-sm'
+                            : 'bg-slate-800/80 text-slate-300 hover:text-white border border-slate-700/60'
+                        }`}
+                      >
+                        <span>{s.subject}</span>
+                        <span className={`text-[10px] font-mono px-1 rounded ${isSelected ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-700 text-slate-300'}`}>
+                          {s.topicsCount}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                {displayedSubjectsSummary.map((subEntry: SubjectSummaryItem) => {
+                  const theme = getSubjectColorTheme(subEntry.subject);
+                  const isExpanded = expandedCardSubject === subEntry.subject;
+                  const topicsToShow = isExpanded ? subEntry.topics : subEntry.topics.slice(0, 2);
+
+                  return (
+                    <div
+                      key={subEntry.subject}
+                      className={`p-4 rounded-xl bg-slate-950/70 border border-slate-800/90 ${theme.cardBorder} transition-all duration-200 flex flex-col justify-between space-y-3`}
+                    >
+                      <div className="space-y-2">
+                        {/* Subject Header */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-2.5 h-2.5 rounded-full ${theme.badgeBg} border ${theme.badgeBorder}`} />
+                            <h4 className="font-bold text-white text-sm">
+                              {subEntry.subject}
+                            </h4>
+                          </div>
+
+                          <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded-lg ${theme.badgeBg} ${theme.badgeText} border ${theme.badgeBorder}`}>
+                            {subEntry.topicsCount} مبحث
+                          </span>
+                        </div>
+
+                        {/* Unboxed Metadata: Books & High Importance */}
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+                          <span>{Array.from(subEntry.books).join(' · ')}</span>
+                          {subEntry.criticalCount > 0 && (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <span className="text-amber-400 font-medium">
+                                ⭐ {subEntry.criticalCount} مبحث حیاتی
+                              </span>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Top Topics Preview in this Subject */}
+                        <div className="space-y-1.5 pt-1">
+                          {topicsToShow.map((topic: PersonalStudyTopic) => (
+                            <div
+                              key={topic.id}
+                              className="text-xs bg-slate-900/90 rounded-lg p-2 border border-slate-800 flex items-center justify-between gap-2 hover:border-slate-700 transition-colors"
+                            >
+                              <div className="truncate flex-1">
+                                <span className="text-[10px] text-slate-400 block truncate">{topic.chapterTitle}</span>
+                                <span className="font-medium text-slate-200 truncate block text-[11px]">{topic.topicName}</span>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  const updated = removeTopicFromPersonalList(topic.id);
+                                  setPersonalList(updated);
+                                  showDashboardToast(`«${topic.topicName}» از لیست شخصی حذف شد.`);
+                                }}
+                                title="حذف این مبحث"
+                                className="p-1 text-slate-500 hover:text-rose-400 transition-colors cursor-pointer shrink-0"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+
+                          {subEntry.topics.length > 2 && (
+                            <button
+                              onClick={() => setExpandedCardSubject(isExpanded ? null : subEntry.subject)}
+                              className="w-full text-[11px] text-amber-400 hover:text-amber-300 py-1 text-center font-medium cursor-pointer transition-colors flex items-center justify-center gap-1"
+                            >
+                              {isExpanded ? (
+                                <>
+                                  <ChevronUp className="w-3 h-3" />
+                                  <span>بستن و نمایش کمتر</span>
+                                </>
+                              ) : (
+                                <>
+                                  <ChevronDown className="w-3 h-3" />
+                                  <span>مشاهده هر {subEntry.topics.length} مبحث</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Card Action */}
+                      <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                        <button
+                          onClick={() => setIsPersonalListModalOpen(true)}
+                          className="text-[11px] text-slate-400 hover:text-amber-300 font-medium cursor-pointer flex items-center gap-1"
+                        >
+                          <BookmarkPlus className="w-3 h-3 text-amber-400" />
+                          <span>ویرایش در SubjectSelector</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            handleLaunchTool('ebbinghaus-scheduler');
+                            try {
+                              localStorage.setItem('rahbord_ebbinghaus_filter_personal_only', 'true');
+                              window.dispatchEvent(new Event('rahbord_ebbinghaus_filter_changed'));
+                            } catch (e) {}
+                          }}
+                          className="text-[11px] text-amber-400 hover:text-amber-300 font-semibold cursor-pointer flex items-center gap-1"
+                        >
+                          <span>مرور این درس</span>
+                          <ArrowLeft className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+
 
       {/* 3 Key Tools Hero Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -521,6 +1038,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
           <div className="flex flex-wrap items-center gap-2">
             <button
+              onClick={() => {
+                const el = document.getElementById('weekly-study-time-widget');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="px-3 py-1.5 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 hover:border-amber-400/30 text-slate-300 hover:text-white rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Clock className="w-3.5 h-3.5 text-amber-400" />
+              <span>نمودار ساعات هفتگی</span>
+            </button>
+            <button
               onClick={() => handleLaunchTool('weekly-insight')}
               className="px-3 py-1.5 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 hover:border-amber-400/30 text-slate-300 hover:text-white rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer"
             >
@@ -551,6 +1078,25 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* New Modern SubjectSelector Modal Component with Smooth Animations & Hierarchy */}
+      <SubjectSelectorModal
+        isOpen={isPersonalListModalOpen}
+        onClose={() => setIsPersonalListModalOpen(false)}
+        onSyncToScheduler={(count) => {
+          showDashboardToast(`${count} مبحث به صف مرور ابینگهاوس منتقل شد.`);
+        }}
+      />
+
+
+      {/* Dashboard Toast Message */}
+      {dashboardToast && (
+        <div className="fixed bottom-6 left-6 z-50 bg-slate-900 border border-amber-400/50 text-white px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2.5 text-xs font-semibold animate-in fade-in slide-in-from-bottom-2">
+          <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>{dashboardToast}</span>
+        </div>
+      )}
     </section>
   );
 };
+
